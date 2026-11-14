@@ -48,6 +48,7 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
   <div class="row">
     <label>日期<input type="date" id="date"></label>
     <label>店家<select id="store"></select></label>
+    <button class="ghost" id="priceUpdate" title="讀取 menu-updates.json 並更新菜單價格">🔄 價格更新</button>
     <button id="newOrder">＋ 新增這天的訂單</button>
   </div>
   <div class="tabs" id="orderTabs"></div>
@@ -222,9 +223,11 @@ const uid=()=>Math.random().toString(36).slice(2,9);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 function fillSel(el,arr){el.innerHTML=arr.map((v,i)=>`<option value="${i}">${esc(Array.isArray(v)?(v[1]?v[0]+" +$"+v[1]:v[0]):v)}</option>`).join("")}
+const TAG={new:"(新)",pending:"(待確認)",none:"(無)"};
+let tags={};try{tags=JSON.parse(localStorage.getItem("drink-tags"))||{}}catch(e){}
 function renderStoreSel(){
   const v=$("store").value;
-  $("store").innerHTML=allStores().map(s=>`<option>${esc(s)}</option>`).join("");
+  $("store").innerHTML=allStores().map(s=>`<option value="${esc(s)}">${esc(s)}${TAG[tags[s]]||""}</option>`).join("");
   if(v&&allStores().includes(v))$("store").value=v;
 }
 async function init(){
@@ -307,6 +310,23 @@ $("saveMenu").onclick=()=>{
   if(!m.length)return alert("格式錯誤");B.saveMenu(cur().store,m);
 };
 $("resetMenu").onclick=()=>B.resetMenu(cur().store);
+
+$("priceUpdate").onclick=async()=>{
+  let d;
+  try{const r=await fetch("menu-updates.json",{cache:"no-store"});if(!r.ok)throw 0;d=await r.json()}
+  catch(e){return alert("讀取 menu-updates.json 失敗。請用 http(s) 開啟頁面(GitHub Pages),不能用 file://。")}
+  const st=d.stores||{},all=allStores();
+  const todo=all.filter(n=>st[n]?.status==="new"&&st[n].menu&&JSON.stringify(st[n].menu)!==JSON.stringify(menuOf(n)));
+  if(todo.length&&!confirm("以下店家的菜單將被覆蓋(含你自行編輯的內容):\n"+todo.join("\n")+"\n\n繼續?"))return;
+  for(const n of todo)await B.saveMenu(n,st[n].menu);
+  tags={};
+  all.forEach(n=>{const s=st[n]?.status;tags[n]=s==="new"||s==="pending"?s:"none"});
+  try{localStorage.setItem("drink-tags",JSON.stringify(tags))}catch(e){}
+  renderStoreSel();
+  const c=k=>all.filter(n=>tags[n]===k).length;
+  alert(`價格更新完成(資料日期 ${d.date||"?"}):\n(新) ${c("new")} 家、(待確認) ${c("pending")} 家、(無) ${c("none")} 家`);
+};
+
 $("addStore").onclick=()=>{
   const n=$("customName").value.trim();if(!n||allStores().includes(n))return;
   B.addStore(n,[["範例飲料",50,60]]);$("customName").value="";
