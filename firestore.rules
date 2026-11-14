@@ -1,0 +1,8 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 公司內部使用:知道網址的人皆可讀寫 orders / stores。
+    match /orders/{id} { allow read, write: if true; }
+    match /stores/{id} { allow read, write: if true; }
+  }
+}

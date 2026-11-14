@@ -40,7 +40,7 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
 </head>
 <body>
 <div class="wrap">
-<h1>🥤 公司飲料訂購</h1>
+<h1>🥤 公司飲料訂購 <span id="mode" class="hint"></span></h1>
 
 <div class="card">
   <h2>1. 選擇日期與店家(台北市大安區)</h2>
@@ -110,7 +110,7 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
 </div>
 </div>
 
-<script>
+<script type="module">
 /* 範例菜單(價格為參考,可在頁面內自行編輯):[品名, 中杯, 大杯] */
 const STORES = {
  "50嵐 (大安區)":[["四季春茶",30,35],["翡翠綠茶",30,35],["8冰綠",35,40],["檸檬綠",50,60],["珍珠奶茶",45,55],["波霸奶茶",45,55],["奶茶",40,50],["烏龍奶茶",45,55],["冰淇淋紅茶",50,60],["柳橙綠茶",55,65]],
@@ -134,10 +134,47 @@ const TOP=[["不加料",0],["珍珠",10],["椰果",10],["仙草凍",10],["布丁
 
 const $=id=>document.getElementById(id);
 const KEY="drink-order-v1";
-let db; try{db=JSON.parse(localStorage.getItem(KEY))}catch(e){}
-db=db||{orders:[],menus:{},custom:[]};
-let curOrder=null,picked=null;
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}};
+const db={orders:[],menus:{},custom:[]};
+let curOrder=null,picked=null,menuKey="";
+let B;
+const onData=()=>{renderStoreSel();renderTabs()};
+const local={
+  mode:"本機模式(資料不共用)",
+  async init(){try{Object.assign(db,JSON.parse(localStorage.getItem(KEY))||{})}catch(e){}onData()},
+  persist(){try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}onData()},
+  async addOrder(o){db.orders.push(o);this.persist()},
+  async delOrder(id){db.orders=db.orders.filter(o=>o.id!==id);this.persist()},
+  async addItem(id,it){db.orders.find(o=>o.id===id).items.push(it);this.persist()},
+  async delItem(id,it){const o=db.orders.find(o=>o.id===id);o.items=o.items.filter(i=>i.id!==it.id);this.persist()},
+  async clearItems(id){db.orders.find(o=>o.id===id).items=[];this.persist()},
+  async saveMenu(n,m){db.menus[n]=m;this.persist()},
+  async resetMenu(n){delete db.menus[n];this.persist()},
+  async addStore(n,m){db.custom.push(n);db.menus[n]=m;this.persist()}
+};
+async function makeFirebase(cfg){
+  const V="10.12.2",u=f=>`https://www.gstatic.com/firebasejs/${V}/firebase-${f}.js`;
+  const {initializeApp}=await import(u("app"));
+  const F=await import(u("firestore"));
+  const fdb=F.getFirestore(initializeApp(cfg));
+  const od=id=>F.doc(fdb,"orders",id),sd=n=>F.doc(fdb,"stores",encodeURIComponent(n));
+  return {
+    mode:"☁ 共用模式(即時同步)",
+    async init(){
+      await new Promise((res,rej)=>{let n=0;const ok=()=>{if(++n===2)res()};
+        F.onSnapshot(F.collection(fdb,"orders"),sn=>{db.orders=sn.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.created||0)-(b.created||0));onData();ok()},rej);
+        F.onSnapshot(F.collection(fdb,"stores"),sn=>{db.menus={};db.custom=[];sn.docs.forEach(d=>{const x=d.data();db.menus[x.name]=JSON.parse(x.items);if(x.custom)db.custom.push(x.name)});onData();ok()},rej);
+      });
+    },
+    addOrder:o=>F.setDoc(od(o.id),{date:o.date,store:o.store,items:[],created:Date.now()}),
+    delOrder:id=>F.deleteDoc(od(id)),
+    addItem:(id,it)=>F.updateDoc(od(id),{items:F.arrayUnion(it)}),
+    delItem:(id,it)=>F.updateDoc(od(id),{items:F.arrayRemove(it)}),
+    clearItems:id=>F.updateDoc(od(id),{items:[]}),
+    saveMenu:(n,m)=>F.setDoc(sd(n),{name:n,items:JSON.stringify(m),custom:db.custom.includes(n)}),
+    resetMenu:n=>db.custom.includes(n)?F.setDoc(sd(n),{name:n,items:JSON.stringify([["範例飲料",50,60]]),custom:true}):F.deleteDoc(sd(n)),
+    addStore:(n,m)=>F.setDoc(sd(n),{name:n,items:JSON.stringify(m),custom:true})
+  };
+}
 const today=()=>{const d=new Date();return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
 const allStores=()=>[...Object.keys(STORES),...db.custom];
 const menuOf=n=>db.menus[n]||STORES[n]||[];
@@ -145,12 +182,25 @@ const uid=()=>Math.random().toString(36).slice(2,9);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 function fillSel(el,arr){el.innerHTML=arr.map((v,i)=>`<option value="${i}">${esc(Array.isArray(v)?(v[1]?v[0]+" +$"+v[1]:v[0]):v)}</option>`).join("")}
-function init(){
-  $("date").value=today();
+function renderStoreSel(){
+  const v=$("store").value;
   $("store").innerHTML=allStores().map(s=>`<option>${esc(s)}</option>`).join("");
+  if(v&&allStores().includes(v))$("store").value=v;
+}
+async function init(){
+  $("date").value=today();
   fillSel($("sweet"),SWEET);fillSel($("ice"),ICE);fillSel($("top"),TOP);
   $("sweet").value=2;$("ice").value=1;
-  renderTabs();
+  B=local;
+  try{
+    const m=await import("./firebase-config.js");
+    if(m.default&&m.default.projectId)B=await makeFirebase(m.default);
+  }catch(e){console.warn("Firebase 未啟用,使用本機模式",e)}
+  $("mode").textContent=B.mode;
+  try{await B.init()}catch(e){
+    console.error(e);alert("連線 Firestore 失敗,改用本機模式。\n請檢查 firebase-config.js 與 Firestore 規則。");
+    B=local;$("mode").textContent=B.mode;await B.init();
+  }
 }
 function dayOrders(){return db.orders.filter(o=>o.date===$("date").value)}
 function renderTabs(){
@@ -158,7 +208,7 @@ function renderTabs(){
   if(!list.find(o=>o.id===curOrder))curOrder=list[0]?.id||null;
   $("orderTabs").innerHTML=list.map(o=>`<span class="tab ${o.id===curOrder?"on":""}" data-id="${o.id}">${esc(o.store)} (${o.items.reduce((a,i)=>a+i.qty,0)}杯)</span>`).join("")||'<span class="hint">這天還沒有訂單,請按「新增這天的訂單」</span>';
   const o=cur();$("main").hidden=!o;
-  if(o){renderMenu();renderCart();renderNames()}
+  if(o){const k=o.store+JSON.stringify(menuOf(o.store));if(k!==menuKey){menuKey=k;renderMenu()}renderCart();renderNames()}
 }
 const cur=()=>db.orders.find(o=>o.id===curOrder);
 
@@ -187,7 +237,7 @@ $("date").onchange=renderTabs;
 $("newOrder").onclick=()=>{
   const o={id:uid(),date:$("date").value,store:$("store").value,items:[]};
   if(!o.date)return alert("請選擇日期");
-  db.orders.push(o);curOrder=o.id;save();renderTabs();
+  curOrder=o.id;B.addOrder(o);
 };
 $("orderTabs").onclick=e=>{const t=e.target.closest(".tab");if(t){curOrder=t.dataset.id;renderTabs()}};
 $("menu").onclick=e=>{
@@ -204,21 +254,21 @@ $("add").onclick=()=>{
   const size=$("size").value;
   if(size==="l"&&!x[2])return alert("此品項沒有大杯");
   const t=TOP[+$("top").value];
-  o.items.push({id:uid(),who,name:x[0],size,price:size==="l"?x[2]:x[1],qty,sweet:SWEET[+$("sweet").value],ice:ICE[+$("ice").value],topName:t[0],top:t[1],note:$("note").value.trim()});
-  save();$("note").value="";$("qty").value=1;renderTabs();
+  B.addItem(o.id,{id:uid(),who,name:x[0],size,price:size==="l"?x[2]:x[1],qty,sweet:SWEET[+$("sweet").value],ice:ICE[+$("ice").value],topName:t[0],top:t[1],note:$("note").value.trim()});
+  $("note").value="";$("qty").value=1;
 };
-$("cart").onclick=e=>{const id=e.target.dataset.del;if(id){const o=cur();o.items=o.items.filter(i=>i.id!==id);save();renderTabs()}};
-$("clearCart").onclick=()=>{if(confirm("確定清空購物車?")){cur().items=[];save();renderTabs()}};
-$("delOrder").onclick=()=>{if(confirm("確定刪除整張訂單?")){db.orders=db.orders.filter(o=>o.id!==curOrder);save();renderTabs()}};
+$("cart").onclick=e=>{const id=e.target.dataset.del;if(id){const o=cur();B.delItem(o.id,o.items.find(i=>i.id===id))}};
+$("clearCart").onclick=()=>{if(confirm("確定清空購物車?"))B.clearItems(curOrder)};
+$("delOrder").onclick=()=>{if(confirm("確定刪除整張訂單?"))B.delOrder(curOrder)};
 $("saveMenu").onclick=()=>{
   const m=$("menuEdit").value.split("\n").map(l=>l.split(/[,，]/).map(s=>s.trim())).filter(a=>a[0]&&+a[1]>0).map(a=>[a[0],+a[1],+a[2]||0]);
-  if(!m.length)return alert("格式錯誤");db.menus[cur().store]=m;save();renderMenu();
+  if(!m.length)return alert("格式錯誤");B.saveMenu(cur().store,m);
 };
-$("resetMenu").onclick=()=>{delete db.menus[cur().store];save();renderMenu()};
+$("resetMenu").onclick=()=>B.resetMenu(cur().store);
 $("addStore").onclick=()=>{
   const n=$("customName").value.trim();if(!n||allStores().includes(n))return;
-  db.custom.push(n);db.menus[n]=[["範例飲料",50,60]];save();$("customName").value="";
-  $("store").innerHTML=allStores().map(s=>`<option>${esc(s)}</option>`).join("");$("store").value=n;
+  B.addStore(n,[["範例飲料",50,60]]);$("customName").value="";
+  setTimeout(()=>{$("store").value=n},300);
   alert("已新增,請按「新增這天的訂單」後編輯菜單");
 };
 
