@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>公司飲料訂購</title>
+<title>C636飲料訂購</title>
 <style>
 :root{--bg:#f6f4ef;--card:#fff;--ink:#2b2b2b;--mute:#777;--line:#e4e0d6;--pri:#c8553d;--pri2:#a9422d;--ok:#2f7d5b}
 @media (prefers-color-scheme:dark){:root{--bg:#1c1b19;--card:#292724;--ink:#eee;--mute:#aaa;--line:#3d3a35;--pri:#e0715a;--pri2:#c8553d}}
@@ -35,12 +35,13 @@ textarea{min-height:150px;font-family:inherit}
 .hint{color:var(--mute);font-size:12px}
 .sel{margin:6px 0;font-weight:600}
 details summary{cursor:pointer;color:var(--pri)}
+.paid{color:var(--ok)}.unpaid{color:var(--pri)}.pay label{flex-direction:row;align-items:center;color:var(--ink);font-size:14px;flex:0 1 auto;gap:6px}.pay input{width:auto}
 canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:10px}
 </style>
 </head>
 <body>
 <div class="wrap">
-<h1>🥤 公司飲料訂購 <span id="mode" class="hint"></span></h1>
+<h1>🥤 C636飲料訂購 <span id="mode" class="hint"></span></h1>
 
 <div class="card">
   <h2>1. 選擇日期與店家(台北市大安區)</h2>
@@ -50,7 +51,7 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
     <button id="newOrder">＋ 新增這天的訂單</button>
   </div>
   <div class="tabs" id="orderTabs"></div>
-  <div class="hint" style="margin-top:8px">同一天可建立多張訂單(例如不同店家)。資料儲存在本機瀏覽器。</div>
+  <div class="hint" style="margin-top:8px">同一天可建立多張訂單(例如不同店家)。<span id="modeHint"></span></div>
 </div>
 
 <div id="main" hidden>
@@ -78,6 +79,7 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
       <label>杯型<select id="size"><option value="m">中杯</option><option value="l">大杯</option></select></label>
       <label>數量<input type="number" id="qty" min="1" value="1"></label>
     </div>
+    <div id="favs"></div>
     <div class="row" style="margin-top:8px">
       <label>甜度<select id="sweet"></select></label>
       <label>冰塊<select id="ice"></select></label>
@@ -90,8 +92,14 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
 
 <div class="card">
   <h2>4. 購物車 <span class="hint" id="cartMeta"></span></h2>
+  <div class="row" style="margin-bottom:10px">
+    <label>截止時間(選填)<input type="datetime-local" id="deadline"></label>
+    <button class="ghost" id="lockBtn">🔒 收單</button>
+    <span class="hint" id="lockState"></span>
+  </div>
   <div style="overflow-x:auto"><table id="cart"></table></div>
   <div class="tot" id="total"></div>
+  <div id="pay" style="margin-top:12px"></div>
   <div class="row" style="margin-top:12px">
     <button id="mkText">產出文字</button>
     <button id="mkImg">匯出圖片</button>
@@ -107,6 +115,12 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
     <button class="sm" id="dl">下載圖片 (PNG)</button>
   </div>
 </div>
+</div>
+
+<div class="card">
+  <h2>5. 歷史紀錄與統計</h2>
+  <label style="max-width:200px">範圍<select id="hRange"><option value="all">全部</option><option value="month">本月</option><option value="30">近 30 天</option></select></label>
+  <div id="hist"></div>
 </div>
 </div>
 
@@ -137,13 +151,15 @@ const KEY="drink-order-v1";
 const db={orders:[],menus:{},custom:[]};
 let curOrder=null,picked=null,menuKey="";
 let B;
-const onData=()=>{renderStoreSel();renderTabs()};
+const onData=()=>{renderStoreSel();renderTabs();renderHist();$("modeHint").textContent=B===local?"資料儲存在本機瀏覽器。":"資料即時同步給所有人。"};
 const local={
   mode:"本機模式(資料不共用)",
   async init(){try{Object.assign(db,JSON.parse(localStorage.getItem(KEY))||{})}catch(e){}onData()},
   persist(){try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}onData()},
   async addOrder(o){db.orders.push(o);this.persist()},
   async delOrder(id){db.orders=db.orders.filter(o=>o.id!==id);this.persist()},
+  async setOrder(id,p){Object.assign(db.orders.find(o=>o.id===id),p);this.persist()},
+  async setPaid(id,w,on){const o=db.orders.find(o=>o.id===id),a=(o.paid||[]).filter(x=>x!==w);if(on)a.push(w);o.paid=a;this.persist()},
   async addItem(id,it){db.orders.find(o=>o.id===id).items.push(it);this.persist()},
   async delItem(id,it){const o=db.orders.find(o=>o.id===id);o.items=o.items.filter(i=>i.id!==it.id);this.persist()},
   async clearItems(id){db.orders.find(o=>o.id===id).items=[];this.persist()},
@@ -189,6 +205,8 @@ async function makeFirebase(cfg){
     },
     addOrder:o=>F.setDoc(od(o.id),{date:o.date,store:o.store,items:[],created:Date.now()}),
     delOrder:id=>F.deleteDoc(od(id)),
+    setOrder:(id,p)=>F.updateDoc(od(id),p),
+    setPaid:(id,w,on)=>F.updateDoc(od(id),{paid:on?F.arrayUnion(w):F.arrayRemove(w)}),
     addItem:(id,it)=>F.updateDoc(od(id),{items:F.arrayUnion(it)}),
     delItem:(id,it)=>F.updateDoc(od(id),{items:F.arrayRemove(it)}),
     clearItems:id=>F.updateDoc(od(id),{items:[]}),
@@ -211,6 +229,7 @@ function renderStoreSel(){
 }
 async function init(){
   $("date").value=today();
+  try{$("who").value=localStorage.getItem("drink-who")||""}catch(e){}
   fillSel($("sweet"),SWEET);fillSel($("ice"),ICE);fillSel($("top"),TOP);
   $("sweet").value=2;$("ice").value=1;
   B=local;
@@ -230,7 +249,7 @@ function renderTabs(){
   if(!list.find(o=>o.id===curOrder))curOrder=list[0]?.id||null;
   $("orderTabs").innerHTML=list.map(o=>`<span class="tab ${o.id===curOrder?"on":""}" data-id="${o.id}">${esc(o.store)} (${o.items.reduce((a,i)=>a+i.qty,0)}杯)</span>`).join("")||'<span class="hint">這天還沒有訂單,請按「新增這天的訂單」</span>';
   const o=cur();$("main").hidden=!o;
-  if(o){const k=o.store+JSON.stringify(menuOf(o.store));if(k!==menuKey){menuKey=k;renderMenu()}renderCart();renderNames()}
+  if(o){const k=o.store+JSON.stringify(menuOf(o.store));if(k!==menuKey){menuKey=k;renderMenu()}renderCart();renderNames();renderLock();renderPay();renderFavs()}
 }
 const cur=()=>db.orders.find(o=>o.id===curOrder);
 
@@ -270,17 +289,18 @@ $("menu").onclick=e=>{
   if(!x[2])$("size").value="m";
 };
 $("add").onclick=()=>{
-  const o=cur();if(picked==null)return alert("請先點選品項");
+  const o=cur();if(isLocked(o))return alert("此訂單已收單");if(picked==null)return alert("請先點選品項");
   const who=$("who").value.trim();if(!who)return alert("請輸入訂購人");
   const qty=Math.max(1,parseInt($("qty").value)||1),x=menuOf(o.store)[picked];
   const size=$("size").value;
   if(size==="l"&&!x[2])return alert("此品項沒有大杯");
   const t=TOP[+$("top").value];
+  try{localStorage.setItem("drink-who",who)}catch(e){}
   B.addItem(o.id,{id:uid(),who,name:x[0],size,price:size==="l"?x[2]:x[1],qty,sweet:SWEET[+$("sweet").value],ice:ICE[+$("ice").value],topName:t[0],top:t[1],note:$("note").value.trim()});
   $("note").value="";$("qty").value=1;
 };
-$("cart").onclick=e=>{const id=e.target.dataset.del;if(id){const o=cur();B.delItem(o.id,o.items.find(i=>i.id===id))}};
-$("clearCart").onclick=()=>{if(confirm("確定清空購物車?"))B.clearItems(curOrder)};
+$("cart").onclick=e=>{const id=e.target.dataset.del;if(id){const o=cur();if(isLocked(o))return alert("此訂單已收單");B.delItem(o.id,o.items.find(i=>i.id===id))}};
+$("clearCart").onclick=()=>{if(isLocked(cur()))return alert("此訂單已收單");if(confirm("確定清空購物車?"))B.clearItems(curOrder)};
 $("delOrder").onclick=()=>{if(confirm("確定刪除整張訂單?"))B.delOrder(curOrder)};
 $("saveMenu").onclick=()=>{
   const m=$("menuEdit").value.split("\n").map(l=>l.split(/[,，]/).map(s=>s.trim())).filter(a=>a[0]&&+a[1]>0).map(a=>[a[0],+a[1],+a[2]||0]);
@@ -344,6 +364,73 @@ $("mkImg").onclick=()=>{
   $("imgOut").hidden=false;
 };
 $("dl").onclick=()=>{const a=document.createElement("a");a.download=`飲料訂單_${cur().date}.png`;a.href=$("cv").toDataURL("image/png");a.click()};
+
+const isLocked=o=>!!(o&&(o.locked||(o.deadline&&Date.now()>new Date(o.deadline).getTime())));
+function renderLock(){
+  const o=cur();if(!o)return;const L=isLocked(o);
+  if(document.activeElement!==$("deadline"))$("deadline").value=o.deadline||"";
+  $("lockBtn").textContent=o.locked?"🔓 重新開放":"🔒 收單";
+  $("lockState").textContent=L?(o.locked?"已收單":"已過截止時間,已收單"):(o.deadline?"截止前可繼續點餐":"開放點餐中");
+  $("add").disabled=L;
+}
+$("lockBtn").onclick=()=>{const o=cur();B.setOrder(o.id,{locked:!o.locked,...(o.locked?{deadline:""}:{})})};
+$("deadline").onchange=()=>B.setOrder(cur().id,{deadline:$("deadline").value});
+setInterval(renderLock,30000);
+
+const byWho=o=>{const m={};o.items.forEach(i=>{const a=m[i.who]=m[i.who]||{cups:0,sum:0};a.cups+=i.qty;a.sum+=price(i)});return m};
+function renderPay(){
+  const o=cur(),m=byWho(o),paid=o.paid||[];
+  let got=0,due=0;Object.entries(m).forEach(([w,a])=>paid.includes(w)?got+=a.sum:due+=a.sum);
+  $("pay").className="pay";
+  $("pay").innerHTML=Object.keys(m).length?`<h2>付款追蹤 <span class="hint">已收 <b class="paid">$${got}</b> / 未收 <b class="unpaid">$${due}</b></span></h2><div class="row">`+
+    Object.entries(m).map(([w,a])=>`<label><input type="checkbox" data-pay="${esc(w)}" ${paid.includes(w)?"checked":""}>${esc(w)} $${a.sum}</label>`).join("")+"</div>":"";
+}
+$("pay").onchange=e=>{const w=e.target.dataset.pay;if(w!=null)B.setPaid(curOrder,w,e.target.checked)};
+
+let favList=[];
+function renderFavs(){
+  const o=cur(),who=$("who").value.trim(),el=$("favs");favList=[];
+  if(!o||!who){el.innerHTML="";return}
+  const m=menuOf(o.store),map={};
+  db.orders.filter(x=>x.store===o.store).forEach(x=>x.items.filter(i=>i.who===who).forEach(i=>{
+    const k=[i.name,i.size,i.sweet,i.ice,i.topName,i.note].join("|");(map[k]=map[k]||{i,n:0}).n+=i.qty}));
+  favList=Object.values(map).sort((a,b)=>b.n-a.n).filter(f=>m.find(x=>x[0]===f.i.name&&(f.i.size!=="l"||x[2]))).slice(0,5);
+  el.innerHTML=favList.length?`<div class="hint" style="margin-top:8px">${esc(who)} 的常點(點一下直接加入 1 杯):</div><div class="tabs">`+
+    favList.map((f,k)=>`<span class="tab" data-fav="${k}">${esc(f.i.name)} ${esc(specPlain(f.i))} ×${f.n}</span>`).join("")+"</div>":"";
+}
+$("who").oninput=renderFavs;
+$("favs").onclick=e=>{
+  const t=e.target.closest("[data-fav]");if(!t)return;
+  const o=cur(),f=favList[+t.dataset.fav];if(!f)return;
+  if(isLocked(o))return alert("此訂單已收單");
+  const x=menuOf(o.store).find(x=>x[0]===f.i.name);
+  try{localStorage.setItem("drink-who",f.i.who)}catch(e){}
+  B.addItem(o.id,{...f.i,id:uid(),qty:1,price:f.i.size==="l"?x[2]:x[1]});
+};
+
+function renderHist(){
+  const r=$("hRange").value,iso=d=>new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
+  let from="";
+  if(r==="month")from=iso(new Date()).slice(0,8)+"01";
+  if(r==="30"){const d=new Date();d.setDate(d.getDate()-30);from=iso(d)}
+  const L=db.orders.filter(o=>o.date>=from).sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0));
+  if(!L.length){$("hist").innerHTML='<p class="hint">這段期間沒有訂單</p>';return}
+  const ppl={},items={};let cups=0,sum=0;
+  L.forEach(o=>{const paid=o.paid||[];o.items.forEach(i=>{
+    const a=ppl[i.who]=ppl[i.who]||{cups:0,sum:0,unpaid:0};a.cups+=i.qty;a.sum+=price(i);if(!paid.includes(i.who))a.unpaid+=price(i);
+    items[i.name]=(items[i.name]||0)+i.qty;cups+=i.qty;sum+=price(i)})});
+  const tbl=(h,rows)=>`<div style="overflow-x:auto"><table><tr>${h.map(x=>`<th>${x}</th>`).join("")}</tr>${rows.join("")}</table></div>`;
+  $("hist").innerHTML=`<p class="hint">${L.length} 張訂單、共 ${cups} 杯、合計 $${sum}</p>`+
+   `<h2 style="margin-top:10px">每人累計</h2>`+tbl(["姓名","杯數","金額","未付款"],Object.entries(ppl).sort((a,b)=>b[1].sum-a[1].sum).map(([w,a])=>`<tr><td>${esc(w)}</td><td>${a.cups}</td><td>$${a.sum}</td><td class="${a.unpaid?"unpaid":"paid"}">${a.unpaid?"$"+a.unpaid:"✓"}</td></tr>`))+
+   `<h2 style="margin-top:12px">熱門品項</h2>`+tbl(["品項","杯數"],Object.entries(items).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([n,c])=>`<tr><td>${esc(n)}</td><td>${c}</td></tr>`))+
+   `<h2 style="margin-top:12px">訂單列表 <span class="hint">(點一下開啟)</span></h2>`+tbl(["日期","店家","杯數","金額"],L.map(o=>{const q=o.items.reduce((a,i)=>a+i.qty,0);return `<tr class="mi" style="display:table-row" data-jump="${o.id}"><td>${o.date}</td><td>${esc(o.store)}</td><td>${q}</td><td>$${o.items.reduce((a,i)=>a+price(i),0)}</td></tr>`}));
+}
+$("hRange").onchange=renderHist;
+$("hist").onclick=e=>{
+  const t=e.target.closest("[data-jump]");if(!t)return;
+  const o=db.orders.find(x=>x.id===t.dataset.jump);if(!o)return;
+  $("date").value=o.date;curOrder=o.id;renderTabs();window.scrollTo({top:0,behavior:"smooth"});
+};
 init();
 </script>
 </body>

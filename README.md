@@ -2,6 +2,15 @@
 
 靜態頁面(`index.html`),可部署到 GitHub Pages。未設定 Firebase 時為本機模式;設定後為多人即時共用。
 
+## 功能
+- 多店家菜單、購物車、文字/圖片匯出
+- 收單與截止時間(截止後無法新增/刪除品項,可手動重新開放)
+- 付款追蹤(每人勾選已付款,顯示已收/未收)
+- 歷史紀錄與統計(每人累計、熱門品項、訂單列表)
+- 個人常點:輸入姓名後顯示常點組合,一鍵加入
+
+> 截止/收單為前端控管,屬於君子協定;不是資料庫層級的強制限制。
+
 ## 啟用共用資料庫(Firebase Firestore)
 1. 到 <https://console.firebase.google.com> 建立專案。
 2. 建置 → Firestore Database → 建立資料庫(正式版模式即可)。
@@ -21,5 +30,5 @@
 開啟頁面時會要求輸入密碼,登入狀態保留在該瀏覽器。密碼不會寫在程式或儲存庫裡;要換密碼就在 Firebase 後台改。
 
 ## 資料結構
-- `orders/{id}`:`date`、`store`、`items[]`、`created`
+- `orders/{id}`:`date`、`store`、`items[]`、`created`、`locked`(收單)、`deadline`(截止時間)、`paid[]`(已付款姓名)
 - `stores/{encodedName}`:`name`、`items`(JSON 字串)、`custom`
