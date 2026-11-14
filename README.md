@@ -1,4 +1,4 @@
-# 公司飲料訂購
+# C636飲料訂購
 
 靜態頁面(`index.html`),可部署到 GitHub Pages。未設定 Firebase 時為本機模式;設定後為多人即時共用。
 
