@@ -32,3 +32,11 @@
 ## 資料結構
 - `orders/{id}`:`date`、`store`、`items[]`、`created`、`locked`(收單)、`deadline`(截止時間)、`paid[]`(已付款姓名)
 - `stores/{encodedName}`:`name`、`items`(JSON 字串)、`custom`
+
+## 管理員模式(只有你看得到設定)
+「價格更新」「編輯此店菜單 / 價格」「新增自訂店家」預設隱藏。
+1. 開 `https://<你的網址>/?admin`,尚未設定時會請你輸入新密碼,並顯示一串雜湊。
+2. 把雜湊貼到 `firebase-config.js` 的 `adminHash: "..."` 後部署。
+3. 之後開 `?admin` 輸入該密碼才會顯示這些設定。
+
+> 這只是隱藏介面,不是真正的存取控制;若要擋住寫入,需另外用 Firebase 驗證與 Firestore 規則。
