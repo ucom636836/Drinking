@@ -9,6 +9,8 @@ export default {
   projectId: "your-project",
   storageBucket: "your-project.appspot.com",
   messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdef"
+  appId: "1:123456789:web:abcdef",
+  // 選填:設定後需輸入公司密碼才能使用(搭配 firestore.rules 的驗證版規則)
+  accessEmail: "team@your-company.example"
 };
 */

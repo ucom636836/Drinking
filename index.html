@@ -151,15 +151,37 @@ const local={
   async resetMenu(n){delete db.menus[n];this.persist()},
   async addStore(n,m){db.custom.push(n);db.menus[n]=m;this.persist()}
 };
+function askPassword(msg){
+  return new Promise(res=>{
+    const d=document.createElement("div");
+    d.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9";
+    d.innerHTML=`<form class="card" style="width:min(340px,90vw);margin:0"><h2>🔒 ${msg}</h2><input type="password" autocomplete="current-password" required><div style="margin-top:10px"><button>登入</button></div></form>`;
+    document.body.append(d);const i=d.querySelector("input");i.focus();
+    d.querySelector("form").onsubmit=e=>{e.preventDefault();d.remove();res(i.value)};
+  });
+}
 async function makeFirebase(cfg){
   const V="10.12.2",u=f=>`https://www.gstatic.com/firebasejs/${V}/firebase-${f}.js`;
   const {initializeApp}=await import(u("app"));
   const F=await import(u("firestore"));
-  const fdb=F.getFirestore(initializeApp(cfg));
+  const app=initializeApp(cfg),fdb=F.getFirestore(app);
+  let ensureLogin=async()=>{};
+  if(cfg.accessEmail){
+    const A=await import(u("auth")),auth=A.getAuth(app);
+    await auth.authStateReady();
+    ensureLogin=async()=>{
+      while(!auth.currentUser){
+        const pw=await askPassword(auth.__tried?"密碼錯誤,請再試一次":"請輸入公司訂餐密碼");
+        auth.__tried=true;
+        try{await A.signInWithEmailAndPassword(auth,cfg.accessEmail,pw)}catch(e){console.warn(e)}
+      }
+    };
+  }
   const od=id=>F.doc(fdb,"orders",id),sd=n=>F.doc(fdb,"stores",encodeURIComponent(n));
   return {
     mode:"☁ 共用模式(即時同步)",
     async init(){
+      await ensureLogin();
       await new Promise((res,rej)=>{let n=0;const ok=()=>{if(++n===2)res()};
         F.onSnapshot(F.collection(fdb,"orders"),sn=>{db.orders=sn.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.created||0)-(b.created||0));onData();ok()},rej);
         F.onSnapshot(F.collection(fdb,"stores"),sn=>{db.menus={};db.custom=[];sn.docs.forEach(d=>{const x=d.data();db.menus[x.name]=JSON.parse(x.items);if(x.custom)db.custom.push(x.name)});onData();ok()},rej);
