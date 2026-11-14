@@ -44,7 +44,7 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
 <h1>🥤 C636飲料訂購 <span id="mode" class="hint"></span></h1>
 
 <div class="card">
-  <h2>1. 選擇日期與店家(台北市大安區)</h2>
+  <h2>選擇日期與店家(台北市大安區)</h2>
   <div class="row">
     <label>日期<input type="date" id="date"></label>
     <label>店家<select id="store"></select></label>
@@ -57,7 +57,7 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
 <div id="main" hidden>
 <div class="grid">
   <div class="card">
-    <h2>2. 菜單 <span id="menuTitle" class="hint"></span></h2>
+    <h2>菜單 <span id="menuTitle" class="hint"></span></h2>
     <div class="menu" id="menu"></div>
     <details style="margin-top:10px"><summary>編輯此店菜單 / 價格</summary>
       <p class="hint">每行一品項:品名,中杯價,大杯價(無大杯可省略)。菜單與價格為參考範例,請以店家現行菜單為準。</p>
@@ -71,7 +71,7 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
   </div>
 
   <div class="card">
-    <h2>3. 我要訂</h2>
+    <h2>我要訂</h2>
     <div class="sel" id="picked">請先點選左側品項</div>
     <div class="row">
       <label>訂購人<input id="who" list="whoList" placeholder="姓名"></label>
@@ -91,7 +91,7 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
 </div>
 
 <div class="card">
-  <h2>4. 購物車 <span class="hint" id="cartMeta"></span></h2>
+  <h2>購物車 <span class="hint" id="cartMeta"></span></h2>
   <div class="row" style="margin-bottom:10px">
     <label>截止時間(選填)<input type="datetime-local" id="deadline"></label>
     <button class="ghost" id="lockBtn">🔒 收單</button>
@@ -118,7 +118,7 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
 </div>
 
 <div class="card">
-  <h2>5. 歷史紀錄與統計</h2>
+  <h2>歷史紀錄與統計</h2>
   <label style="max-width:200px">範圍<select id="hRange"><option value="all">全部</option><option value="month">本月</option><option value="30">近 30 天</option></select></label>
   <div id="hist"></div>
 </div>
