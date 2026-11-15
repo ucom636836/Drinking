@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>C636飲料訂購</title>
 <style>
+[hidden]{display:none!important}
 :root{--bg:#f6f4ef;--card:#fff;--ink:#2b2b2b;--mute:#777;--line:#e4e0d6;--pri:#c8553d;--pri2:#a9422d;--ok:#2f7d5b}
 @media (prefers-color-scheme:dark){:root{--bg:#1c1b19;--card:#292724;--ink:#eee;--mute:#aaa;--line:#3d3a35;--pri:#e0715a;--pri2:#c8553d}}
 *{box-sizing:border-box}
@@ -48,7 +49,7 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
   <div class="row">
     <label>日期<input type="date" id="date"></label>
     <label>店家<select id="store"></select></label>
-    <button class="ghost" id="priceUpdate" title="讀取 menu-updates.json 並更新菜單價格">🔄 價格更新</button>
+    <button class="ghost admin-only" hidden id="priceUpdate" title="讀取 menu-updates.json 並更新菜單價格">🔄 價格更新</button>
     <button id="newOrder">＋ 新增這天的訂單</button>
   </div>
   <div class="tabs" id="orderTabs"></div>
@@ -60,13 +61,13 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
   <div class="card">
     <h2>菜單 <span id="menuTitle" class="hint"></span></h2>
     <div class="menu" id="menu"></div>
-    <details style="margin-top:10px"><summary>編輯此店菜單 / 價格</summary>
+    <details class="admin-only" hidden style="margin-top:10px"><summary>編輯此店菜單 / 價格</summary>
       <p class="hint">每行一品項:品名,中杯價,大杯價(無大杯可省略)。菜單與價格為參考範例,請以店家現行菜單為準。</p>
       <textarea id="menuEdit"></textarea>
       <button class="sm" id="saveMenu">儲存菜單</button>
       <button class="sm ghost" id="resetMenu">還原預設</button>
     </details>
-    <details style="margin-top:8px"><summary>新增自訂店家</summary>
+    <details class="admin-only" hidden style="margin-top:8px"><summary>新增自訂店家</summary>
       <div class="row" style="margin-top:6px"><label>店名<input id="customName" placeholder="例:某某茶飲 (大安店)"></label><button class="sm" id="addStore">新增</button></div>
     </details>
   </div>
@@ -168,6 +169,20 @@ const local={
   async resetMenu(n){delete db.menus[n];this.persist()},
   async addStore(n,m){db.custom.push(n);db.menus[n]=m;this.persist()}
 };
+let ADMIN_HASH="";
+const sha=async t=>[...new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode("c636-drink-admin:"+t)))].map(b=>b.toString(16).padStart(2,"0")).join("");
+async function setupAdmin(){
+  if(!new URLSearchParams(location.search).has("admin"))return;
+  if(!ADMIN_HASH){
+    const h=await sha(await askPassword("尚未設定管理員密碼:請輸入想用的新密碼"));
+    prompt("把這串貼到 firebase-config.js 的 adminHash(例:adminHash: \"...\"),部署後即可用 ?admin 登入:",h);return;
+  }
+  for(let n=0;n<3;n++){
+    if(await sha(await askPassword(n?"密碼錯誤,請再試一次":"請輸入管理員密碼"))===ADMIN_HASH){
+      document.querySelectorAll(".admin-only").forEach(e=>e.hidden=false);return;
+    }
+  }
+}
 function askPassword(msg){
   return new Promise(res=>{
     const d=document.createElement("div");
@@ -238,9 +253,11 @@ async function init(){
   B=local;
   try{
     const m=await import("./firebase-config.js");
+    ADMIN_HASH=m.default?.adminHash||"";
     if(m.default&&m.default.projectId)B=await makeFirebase(m.default);
   }catch(e){console.warn("Firebase 未啟用,使用本機模式",e)}
   $("mode").textContent=B.mode;
+  setupAdmin();
   try{await B.init()}catch(e){
     console.error(e);alert("連線 Firestore 失敗,改用本機模式。\n請檢查 firebase-config.js 與 Firestore 規則。");
     B=local;$("mode").textContent=B.mode;await B.init();
