@@ -32,12 +32,19 @@
 ## 資料結構
 - `orders/{id}`:`date`、`store`、`items[]`、`created`、`locked`(收單)、`deadline`(截止時間)、`paid[]`(已付款姓名)
 - `stores/{encodedName}`:`name`、`items`(JSON 字串)、`custom`
+- `settings/storeVisibility`:`hidden[]`(不顯示給一般使用者的店名)
 
 ## 管理員模式(只有你看得到設定)
-「價格更新」「編輯此店菜單 / 價格」「新增自訂店家」預設隱藏。
+輸入管理員密碼後,頁面上方會出現「訂餐 / 店家管理」分頁。「店家管理」包含:
+- 編輯各店菜單與價格、還原預設、價格更新(讀取 `menu-updates.json`)
+- 新增、刪除自訂店家
+- 勾選哪些店家顯示給一般使用者(取消勾選只影響新增訂單時的店家選單,已建立的訂單不受影響)
+
+啟用方式:
 1. 開 `https://<你的網址>/?admin`,尚未設定時會請你輸入新密碼,並顯示一串雜湊。
 2. 把雜湊貼到 `firebase-config.js` 的 `adminHash: "..."` 後部署。
-3. 之後開 `?admin` 輸入該密碼才會顯示這些設定。
+3. 之後開 `?admin` 輸入該密碼才會顯示管理分頁。
+4. 「顯示給一般使用者」的設定存在 Firestore `settings/storeVisibility`,需把最新的 `firestore.rules`(含 `settings` 規則)貼到 Firebase 主控台並發布,否則勾選無法儲存。
 
 > 這只是隱藏介面,不是真正的存取控制;若要擋住寫入,需另外用 Firebase 驗證與 Firestore 規則。
 

@@ -43,13 +43,14 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
 <body>
 <div class="wrap">
 <h1>🥤 C636飲料訂購 <span id="mode" class="hint"></span></h1>
+<div class="tabs admin-only" hidden id="viewTabs" style="margin:0 0 12px"><span class="tab on" data-view="order">訂餐</span><span class="tab" data-view="admin">店家管理</span></div>
 
+<div id="orderView">
 <div class="card">
   <h2>選擇日期與店家(台北市大安區)</h2>
   <div class="row">
     <label>日期<input type="date" id="date"></label>
     <label>店家<select id="store"></select></label>
-    <button class="ghost admin-only" hidden id="priceUpdate" title="讀取 menu-updates.json 並更新菜單價格">🔄 價格更新</button>
     <button id="newOrder">＋ 新增這天的訂單</button>
   </div>
   <div class="tabs" id="orderTabs"></div>
@@ -61,15 +62,6 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
   <div class="card">
     <h2>菜單 <span id="menuTitle" class="hint"></span></h2>
     <div class="menu" id="menu"></div>
-    <details class="admin-only" hidden style="margin-top:10px"><summary>編輯此店菜單 / 價格</summary>
-      <p class="hint">每行一品項:品名,中杯價,大杯價(無大杯可省略)。菜單與價格為參考範例,請以店家現行菜單為準。</p>
-      <textarea id="menuEdit"></textarea>
-      <button class="sm" id="saveMenu">儲存菜單</button>
-      <button class="sm ghost" id="resetMenu">還原預設</button>
-    </details>
-    <details class="admin-only" hidden style="margin-top:8px"><summary>新增自訂店家</summary>
-      <div class="row" style="margin-top:6px"><label>店名<input id="customName" placeholder="例:某某茶飲 (大安店)"></label><button class="sm" id="addStore">新增</button></div>
-    </details>
   </div>
 
   <div class="card">
@@ -126,6 +118,35 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
 </div>
 </div>
 
+<div id="adminView" hidden>
+  <div class="card">
+    <h2>編輯店家價目表</h2>
+    <div class="row">
+      <label>店家<select id="aStore"></select></label>
+      <button class="ghost" id="priceUpdate" title="讀取 menu-updates.json 並更新菜單價格">🔄 價格更新</button>
+    </div>
+    <div class="hint" id="aMeta" style="margin:6px 0"></div>
+    <p class="hint">每行一品項:品名,中杯價,大杯價(無大杯可省略)。菜單與價格為參考範例,請以店家現行菜單為準。</p>
+    <textarea id="menuEdit"></textarea>
+    <div style="margin-top:8px">
+      <button class="sm" id="saveMenu">儲存菜單</button>
+      <button class="sm ghost" id="resetMenu">還原預設</button>
+      <button class="sm ghost" id="delStore" hidden>刪除此自訂店家</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>新增自訂店家</h2>
+    <div class="row"><label>店名<input id="customName" placeholder="例:某某茶飲 (大安店)"></label><button class="sm" id="addStore">新增</button></div>
+  </div>
+  <div class="card">
+    <h2>顯示給一般使用者的店家</h2>
+    <p class="hint">取消勾選的店家不會出現在一般使用者的店家選單(已建立的訂單不受影響,管理員仍看得到)。</p>
+    <div class="pay" id="visList"></div>
+    <div class="hint" id="visErr" style="color:var(--pri)"></div>
+  </div>
+</div>
+</div>
+
 <script type="module">
 /* 菜單(2026-11 依第三方整理文更新,北部價,僅供參考,請以門市為準,可在頁面內自行編輯):[品名, 中杯, 大杯] */
 const STORES = {
@@ -150,10 +171,11 @@ const TOP=[["不加料",0],["珍珠",10],["椰果",10],["仙草凍",10],["布丁
 
 const $=id=>document.getElementById(id);
 const KEY="drink-order-v1";
-const db={orders:[],menus:{},custom:[]};
+const db={orders:[],menus:{},custom:[],hidden:[]};
+let isAdmin=false;
 let curOrder=null,picked=null,menuKey="";
 let B;
-const onData=()=>{renderStoreSel();renderTabs();renderHist();$("modeHint").textContent=B===local?"資料儲存在本機瀏覽器。":"資料即時同步給所有人。"};
+const onData=()=>{renderStoreSel();renderTabs();renderHist();renderAdmin();$("modeHint").textContent=B===local?"資料儲存在本機瀏覽器。":"資料即時同步給所有人。"};
 const local={
   mode:"本機模式(資料不共用)",
   async init(){try{Object.assign(db,JSON.parse(localStorage.getItem(KEY))||{})}catch(e){}onData()},
@@ -165,6 +187,8 @@ const local={
   async addItem(id,it){db.orders.find(o=>o.id===id).items.push(it);this.persist()},
   async delItem(id,it){const o=db.orders.find(o=>o.id===id);o.items=o.items.filter(i=>i.id!==it.id);this.persist()},
   async clearItems(id){db.orders.find(o=>o.id===id).items=[];this.persist()},
+  async setHidden(a){db.hidden=a;this.persist()},
+  async delStore(n){db.custom=db.custom.filter(x=>x!==n);delete db.menus[n];this.persist()},
   async saveMenu(n,m){db.menus[n]=m;this.persist()},
   async resetMenu(n){delete db.menus[n];this.persist()},
   async addStore(n,m){db.custom.push(n);db.menus[n]=m;this.persist()}
@@ -179,7 +203,8 @@ async function setupAdmin(){
   }
   for(let n=0;n<3;n++){
     if(await sha(await askPassword(n?"密碼錯誤,請再試一次":"請輸入管理員密碼"))===ADMIN_HASH){
-      document.querySelectorAll(".admin-only").forEach(e=>e.hidden=false);return;
+      document.querySelectorAll(".admin-only").forEach(e=>e.hidden=false);
+      isAdmin=true;renderStoreSel();renderAdmin();return;
     }
   }
 }
@@ -216,6 +241,7 @@ async function makeFirebase(cfg){
       await ensureLogin();
       await new Promise((res,rej)=>{let n=0;const ok=()=>{if(++n===2)res()};
         F.onSnapshot(F.collection(fdb,"orders"),sn=>{db.orders=sn.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.created||0)-(b.created||0));onData();ok()},rej);
+        F.onSnapshot(F.doc(fdb,"settings","storeVisibility"),sn=>{db.hidden=sn.exists()?(sn.data().hidden||[]):[];db.hiddenErr="";onData()},e=>{console.warn("讀取店家顯示設定失敗",e);db.hiddenErr="無法讀取/儲存「顯示設定」:請確認 firestore.rules 已加入 settings 規則並發布。";onData()});
         F.onSnapshot(F.collection(fdb,"stores"),sn=>{db.menus={};db.custom=[];sn.docs.forEach(d=>{const x=d.data();db.menus[x.name]=JSON.parse(x.items);if(x.custom)db.custom.push(x.name)});onData();ok()},rej);
       });
     },
@@ -226,6 +252,8 @@ async function makeFirebase(cfg){
     addItem:(id,it)=>F.updateDoc(od(id),{items:F.arrayUnion(it)}),
     delItem:(id,it)=>F.updateDoc(od(id),{items:F.arrayRemove(it)}),
     clearItems:id=>F.updateDoc(od(id),{items:[]}),
+    setHidden:a=>F.setDoc(F.doc(fdb,"settings","storeVisibility"),{hidden:a}),
+    delStore:n=>F.deleteDoc(sd(n)),
     saveMenu:(n,m)=>F.setDoc(sd(n),{name:n,items:JSON.stringify(m),custom:db.custom.includes(n)}),
     resetMenu:n=>db.custom.includes(n)?F.setDoc(sd(n),{name:n,items:JSON.stringify([["範例飲料",50,60]]),custom:true}):F.deleteDoc(sd(n)),
     addStore:(n,m)=>F.setDoc(sd(n),{name:n,items:JSON.stringify(m),custom:true})
@@ -249,13 +277,44 @@ async function loadMeta(){
     const d=await r.json();meta={};
     Object.entries(d.stores||{}).forEach(([n,s])=>{meta[n]={status:s.status,updated:s.updated||(s.status==="pending"?"":d.date||"")}});
   }catch(e){meta={}}
-  renderStoreSel();menuKey="";renderTabs();
+  renderStoreSel();menuKey="";renderTabs();renderAdmin();
 }
 function renderStoreSel(){
   const v=$("store").value;
-  $("store").innerHTML=allStores().map(s=>`<option value="${esc(s)}">${esc(s)}${esc(stampOf(s))}</option>`).join("");
-  if(v&&allStores().includes(v))$("store").value=v;
+  const list=allStores().filter(s=>isAdmin||!db.hidden.includes(s));
+  $("store").innerHTML=list.map(s=>`<option value="${esc(s)}">${esc(s)}${esc(stampOf(s))}${db.hidden.includes(s)?"(已隱藏)":""}</option>`).join("");
+  if(v&&list.includes(v))$("store").value=v;
 }
+/* ===== 店家管理分頁(僅管理員) ===== */
+let adminKey="";
+function renderAdmin(){
+  if(!isAdmin)return;
+  const all=allStores(),sel=$("aStore"),v=sel.value;
+  sel.innerHTML=all.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join("");
+  if(v&&all.includes(v))sel.value=v;
+  const n=sel.value,k=n+JSON.stringify(menuOf(n));
+  if(k!==adminKey){adminKey=k;$("menuEdit").value=menuOf(n).map(x=>x.join(",")).join("\n")}
+  $("aMeta").textContent=n?("價格資料:"+(stampOf(n).trim()||"無")):"";
+  $("delStore").hidden=!db.custom.includes(n);
+  $("visList").innerHTML=`<div class="row">`+all.map(s=>`<label><input type="checkbox" data-vis="${esc(s)}" ${db.hidden.includes(s)?"":"checked"}>${esc(s)}</label>`).join("")+"</div>";
+  $("visErr").textContent=db.hiddenErr||"";
+}
+function setView(v){
+  $("orderView").hidden=v!=="order";$("adminView").hidden=v!=="admin";
+  document.querySelectorAll("#viewTabs .tab").forEach(t=>t.classList.toggle("on",t.dataset.view===v));
+}
+$("viewTabs").onclick=e=>{const t=e.target.closest(".tab");if(t)setView(t.dataset.view)};
+$("aStore").onchange=()=>{adminKey="";renderAdmin()};
+$("visList").onchange=e=>{
+  if(e.target.dataset.vis==null)return;
+  const hid=[...document.querySelectorAll("#visList [data-vis]")].filter(c=>!c.checked).map(c=>c.dataset.vis);
+  Promise.resolve(B.setHidden(hid)).catch(err=>{console.error(err);alert("儲存顯示設定失敗:"+(err.message||err));renderAdmin()});
+};
+$("delStore").onclick=async()=>{
+  const n=$("aStore").value;if(!db.custom.includes(n))return;
+  if(!confirm(`確定刪除自訂店家「${n}」?\n其菜單會一併刪除;已建立的訂單仍保留,但無法再從菜單點餐。`))return;
+  try{await B.delStore(n)}catch(e){alert("刪除失敗:"+(e.message||e))}
+};
 async function init(){
   $("date").value=today();
   try{$("who").value=localStorage.getItem("drink-who")||""}catch(e){}
@@ -290,7 +349,6 @@ function renderMenu(){
   const mt=meta[o.store];
   $("menuTitle").textContent="— "+o.store+(mt?.updated?`(價格資料 ${mt.updated})`:mt?.status==="pending"?"(價格待確認)":"");
   $("menu").innerHTML=m.map((x,i)=>`<div class="mi" data-i="${i}"><span>${esc(x[0])}</span><small>中 $${x[1]}${x[2]?" / 大 $"+x[2]:""}</small></div>`).join("");
-  $("menuEdit").value=m.map(x=>x.join(",")).join("\n");
 }
 function renderNames(){
   const names=[...new Set(db.orders.flatMap(o=>o.items.map(i=>i.who)))];
@@ -337,9 +395,10 @@ $("clearCart").onclick=()=>{if(isLocked(cur()))return alert("此訂單已收單"
 $("delOrder").onclick=()=>{if(confirm("確定刪除整張訂單?"))B.delOrder(curOrder)};
 $("saveMenu").onclick=()=>{
   const m=$("menuEdit").value.split("\n").map(l=>l.split(/[,，]/).map(s=>s.trim())).filter(a=>a[0]&&+a[1]>0).map(a=>[a[0],+a[1],+a[2]||0]);
-  if(!m.length)return alert("格式錯誤");B.saveMenu(cur().store,m);
+  if(!m.length)return alert("格式錯誤");
+  const n=$("aStore").value;Promise.resolve(B.saveMenu(n,m)).then(()=>alert("已儲存:"+n)).catch(e=>alert("儲存失敗:"+(e.message||e)));
 };
-$("resetMenu").onclick=()=>B.resetMenu(cur().store);
+$("resetMenu").onclick=()=>{const n=$("aStore").value;if(n&&confirm(`確定將「${n}」還原預設?`)){adminKey="";B.resetMenu(n)}};
 
 $("priceUpdate").onclick=async()=>{
   let d;
@@ -358,8 +417,8 @@ $("priceUpdate").onclick=async()=>{
 $("addStore").onclick=()=>{
   const n=$("customName").value.trim();if(!n||allStores().includes(n))return;
   B.addStore(n,[["範例飲料",50,60]]);$("customName").value="";
-  setTimeout(()=>{$("store").value=n},300);
-  alert("已新增,請按「新增這天的訂單」後編輯菜單");
+  setTimeout(()=>{$("aStore").value=n;adminKey="";renderAdmin()},300);
+  alert("已新增,請在上方「編輯店家價目表」選擇該店並編輯菜單");
 };
 
 function buildText(){
