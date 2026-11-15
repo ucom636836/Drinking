@@ -1,0 +1,98 @@
+{
+  "50嵐 (大安區)": {
+    "urls": [],
+    "note": "找不到官方來源可抓文字價格:北區官網 50lan.com/web/products.asp 僅有品名無價格(價格在圖片),且頁面內容過舊;50嵐.tw 僅為品牌介紹"
+  },
+  "清心福全 (大安區)": {
+    "urls": [
+      "https://www.chingshin.tw/product.php"
+    ],
+    "files": [],
+    "note": "價目表無可用直連檔:官網產品頁(product.php 及各 product_catalogs 分頁)只有品名與產品照,無任何價目表圖片/PDF(北/中/南價目表按鈕已被註解且連結為空 upload/video/);upload/video/ 下僅有加料/冰熱/甜度說明圖,無價格。2026-11 實測確認"
+  },
+  "迷客夏 Milksha (大安區)": {
+    "urls": [
+      "https://www.milksha.com/products.php"
+    ],
+    "files": [
+      "https://www.milksha.com/upload/price/2611101658230000002.pdf"
+    ],
+    "note": "一般門市菜單 PDF(2 頁,2.8MB,橫式 A4):第1頁=北部價、第2頁=中/南部價,腳本請只辨識第1頁(北部);左下標示日期 2026-11-11,文字清晰。網址含日期流水號,菜單更新時檔名會變,需重新從 products.php 的「一般門市菜單」連結取得。百貨商場菜單 PDF(upload/price/2611101658370000002.pdf,5.4MB,3頁)為另一套價格,未收"
+  },
+  "CoCo都可 (大安區)": {
+    "urls": [
+      "https://www.coco-tea.com/Products.aspx"
+    ],
+    "files": [],
+    "note": "價目表無可用直連檔:www.coco-tea.com 目前為全球英文版官網,Products 頁僅有商品照與英文品名,無價目表圖片/PDF;台灣官網網域(coco-tea.com.tw 等)無法連線。2026-11 實測"
+  },
+  "大苑子 (大安區)": {
+    "urls": [
+      "https://www.dayungs.com/item_list-html/"
+    ],
+    "files": [
+      "https://www.dayungs.com/wp-content/uploads/2026/11/%E5%AE%98%E7%B6%B2%E5%83%B9%E7%9B%AE%E8%A1%A8_261113-261122_%E5%8C%97.jpg"
+    ],
+    "note": "北部價目表 JPG(2000x3250,1.1MB,圖角標示「北部」),清晰可讀。檔名含使用期限日期(261113-261122),每期更新會變動,需重新從 item_list-html 頁面首張輪播圖取得;網址中文已 percent-encode。頁面另有手機版(官網手機版價目表_*_北.jpg,1080x6900,1.6MB)內容相同,未收"
+  },
+  "得正 (大安區)": {
+    "urls": [],
+    "note": "需 JS 渲染:官網 dejeng.com 為 Next.js 單頁,純 HTTP 取得僅有標題,無菜單;找不到可抓文字價格的官方來源"
+  },
+  "一沐日 (大安區)": {
+    "urls": [],
+    "note": "需 JS 渲染:官網 aniceholiday.com.tw/beverages-menu 飲品需選地區後由 JS 載入,HTML 無品名價格"
+  },
+  "可不可熟成紅茶 (大安區)": {
+    "urls": [
+      "https://kebuke.com/menu/"
+    ],
+    "note": "可抓文字價格:官網菜單頁 HTML 直接含品名與中/大杯價格(含北部及離島、其他地區、商場特規店分頁,大安區屬北部)"
+  },
+  "五桐號 (大安區)": {
+    "urls": [
+      "https://www.wootea.com/menu/"
+    ],
+    "files": [
+      "https://www.wootea.com/upload/menu_b/ALL_menu_26J07_gsdrdyzru2.jpg"
+    ],
+    "note": "全台門市(百貨店除外)統一價目表 JPG(0.67MB,橫式),價格清晰,全台同價(無分區),大安區適用。檔名含版本碼(26J07),菜單換版時會變動,需重新從 wootea.com/menu/ 取得。同頁另有飲品標示表(營養標示,無價格)與手機版長圖(3.4MB)未收"
+  },
+  "麻古茶坊 (大安區)": {
+    "urls": [
+      "https://www.macutea.com.tw/drink.php"
+    ],
+    "files": [
+      "https://www.macutea.com.tw/upload_image/carte/menu_N.jpg"
+    ],
+    "note": "北部菜單 JPG(4000x3680,1.1MB),清晰可讀。注意:圖片左半為「北部」菜單(適用大安區),右半為「大葉高島屋」百貨店專屬價(價格不同),腳本需只取左半/北部欄。網址固定(頁面以 ?t= 隨機參數防快取,不需要),但檔案內容更新時會被覆蓋"
+  },
+  "龜記茗品 (大安區)": {
+    "urls": [
+      "https://guiji-group.com/drinks"
+    ],
+    "note": "需 JS 渲染:官網茶品菜單頁(含價格/熱量)由 JS 載入,HTML 僅有地區選單,無品名價格"
+  },
+  "鶴茶樓 (大安區)": {
+    "urls": [],
+    "note": "找不到官方來源:僅找到 hechalou.com 為空白佔位頁(即將推出),無菜單"
+  },
+  "老賴茶棧 (大安區)": {
+    "urls": [
+      "https://www.liketeashop.com/tw/drink"
+    ],
+    "files": [
+      "https://www.liketeashop.com/tw/tool-download/page_files/file/100/%E5%8C%97%E9%83%A8%E5%83%B9"
+    ],
+    "note": "北部價 PDF(1頁,1.3MB,A5 直式,標示「2026.10 北部價」),清晰可讀。實測不需 cookie 即可單純 GET 取得(200 application/pdf;注意 HEAD 請求會 404,需用 GET)。網址為固定檔案 ID 100(亦可用 .../file/100),換版時內容會被覆蓋。中南部價為 file/99、離島價為 file/101,未收"
+  },
+  "再睡5分鐘 (大安區)": {
+    "urls": [
+      "https://www.napteazzz.com/en/recommendations/%E8%8F%9C%E5%96%AEmenu"
+    ],
+    "files": [
+      "https://static.wixstatic.com/media/14ee62_5e8a2dbada5840e9ad2a12b10a51cc5c~mv2.png"
+    ],
+    "note": "「一般門市【二代店】」菜單 PNG(1184x2771,0.4MB),價格清晰,適用台北各店(南陽/寧夏/江南/吳興等);全台單一價目表(無分區)。一代店(新莊幸福店/台中一中店)與香港菜單為不同價,未收。為 Wix 媒體原檔直連(無簽章),官網換菜單時媒體 ID 會變,需重新從 napteazzz.com 菜單頁取得"
+  }
+}

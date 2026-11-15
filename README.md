@@ -40,3 +40,15 @@
 3. 之後開 `?admin` 輸入該密碼才會顯示這些設定。
 
 > 這只是隱藏介面,不是真正的存取控制;若要擋住寫入,需另外用 Firebase 驗證與 Firestore 規則。
+
+## 每週價目表自動更新
+`.github/workflows/weekly-menu.yml` 每週一台北時間 06:00(也可在 Actions 頁手動執行)跑 `scripts/update-menus.mjs`:
+1. 依 `sources.json` 列的**官方網址**取頁面文字(沒有來源的店標為待確認、沿用舊價格)。
+2. 每家店呼叫一次 Claude(`claude-sonnet-5-5`)抽出價目表,並驗證:價格為正整數、大杯不低於中杯、價格必須出現在來源頁面、品項不能減少超過一半。驗證失敗的店沿用舊資料。
+3. 有變動才開 PR 更新 `menu-updates.json`(每家店含 `status`、`updated`、`source`、`menu`),PR 描述列出變動,價格變動超過 30% 會標記。**請抽查後再合併**。
+4. 合併後,頁面的店家選單會顯示每家店的資料日期與標籤;管理員仍需按「價格更新」才會把新菜單寫入資料庫。
+
+設定:
+- repo → Settings → Secrets and variables → Actions,新增 `ANTHROPIC_API_KEY`。
+- repo → Settings → Actions → General → 勾選「Allow GitHub Actions to create and approve pull requests」。
+- 本機試跑(不寫檔):`ANTHROPIC_API_KEY=... node scripts/update-menus.mjs --dry`
