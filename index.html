@@ -136,6 +136,7 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
       <label>店家<select id="aStore"></select></label>
       <button class="ghost" id="priceUpdate" title="讀取 menu-updates.json 並更新菜單價格">🔄 價格更新</button>
     </div>
+    <div class="row" style="margin-top:6px"><label>顯示名稱<input id="aName" placeholder="留空=用原名"></label><button class="sm" id="saveName">儲存名稱</button></div>
     <div class="hint" id="aMeta" style="margin:6px 0"></div>
     <p class="hint">逐項填寫品名、中杯價、大杯價(沒有大杯就留空)。菜單與價格為參考範例,請以店家現行菜單為準。</p>
     <div class="irow hint"><span>品名</span><span>中杯</span><span>大杯</span><span></span></div>
@@ -199,7 +200,7 @@ const TOP=[["不加料",0],["珍珠",10],["椰果",10],["仙草凍",10],["布丁
 
 const $=id=>document.getElementById(id);
 const KEY="drink-order-v1";
-const db={orders:[],menus:{},custom:[],hidden:[],updated:{}};
+const db={orders:[],menus:{},custom:[],hidden:[],updated:{},names:{}};
 let isAdmin=false;
 let curOrder=null,picked=null,menuKey="";
 let B;
@@ -216,6 +217,7 @@ const local={
   async delItem(id,it){const o=db.orders.find(o=>o.id===id);o.items=o.items.filter(i=>i.id!==it.id);this.persist()},
   async clearItems(id){db.orders.find(o=>o.id===id).items=[];this.persist()},
   async setHidden(a){db.hidden=a;this.persist()},
+  async setNames(m){db.names=m;this.persist()},
   async delStore(n){db.custom=db.custom.filter(x=>x!==n);delete db.menus[n];this.persist()},
   async saveMenu(n,m,u){db.menus[n]=m;db.updated=db.updated||{};if(u)db.updated[n]=u;this.persist()},
   async resetMenu(n){delete db.menus[n];this.persist()},
@@ -270,6 +272,7 @@ async function makeFirebase(cfg){
       await new Promise((res,rej)=>{let n=0;const ok=()=>{if(++n===2)res()};
         F.onSnapshot(F.collection(fdb,"orders"),sn=>{db.orders=sn.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.created||0)-(b.created||0));onData();ok()},rej);
         F.onSnapshot(F.doc(fdb,"settings","storeVisibility"),sn=>{db.hidden=sn.exists()?(sn.data().hidden||[]):[];db.hiddenErr="";onData()},e=>{console.warn("讀取店家顯示設定失敗",e);db.hiddenErr="無法讀取/儲存「顯示設定」:請確認 firestore.rules 已加入 settings 規則並發布。";onData()});
+        F.onSnapshot(F.doc(fdb,"settings","storeNames"),sn=>{db.names=sn.exists()?(sn.data().map||{}):{};onData()},e=>console.warn("讀取店名設定失敗",e));
         F.onSnapshot(F.collection(fdb,"stores"),sn=>{db.menus={};db.custom=[];db.updated={};sn.docs.forEach(d=>{const x=d.data();db.menus[x.name]=JSON.parse(x.items);if(x.updated)db.updated[x.name]=x.updated;if(x.custom)db.custom.push(x.name)});onData();ok()},rej);
       });
     },
@@ -281,6 +284,7 @@ async function makeFirebase(cfg){
     delItem:(id,it)=>F.updateDoc(od(id),{items:F.arrayRemove(it)}),
     clearItems:id=>F.updateDoc(od(id),{items:[]}),
     setHidden:a=>F.setDoc(F.doc(fdb,"settings","storeVisibility"),{hidden:a}),
+    setNames:m=>F.setDoc(F.doc(fdb,"settings","storeNames"),{map:m}),
     delStore:n=>F.deleteDoc(sd(n)),
     saveMenu:(n,m,u)=>F.setDoc(sd(n),{name:n,items:JSON.stringify(m),custom:db.custom.includes(n),updated:u||db.updated[n]||""}),
     resetMenu:n=>db.custom.includes(n)?F.setDoc(sd(n),{name:n,items:JSON.stringify([["範例飲料",50,60]]),custom:true}):F.deleteDoc(sd(n)),
@@ -289,6 +293,7 @@ async function makeFirebase(cfg){
 }
 const today=()=>{const d=new Date();return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
 const allStores=()=>[...Object.keys(STORES),...db.custom];
+const label=n=>(db.names&&db.names[n])||n;
 const menuOf=n=>db.menus[n]||STORES[n]||[];
 const uid=()=>Math.random().toString(36).slice(2,9);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -312,7 +317,7 @@ async function loadMeta(){
 function renderStoreSel(){
   const v=$("store").value;
   const list=allStores().filter(s=>!db.hidden.includes(s));
-  const short=s=>s.replace(/\s*\(大安區\)\s*$/,"");
+  const short=s=>label(s).replace(/\s*\(大安區\)\s*$/,"");
   $("store").innerHTML=list.map(s=>`<option value="${esc(s)}">${esc(short(s))}${esc(stampOf(s))}</option>`).join("");
   if(v&&list.includes(v))$("store").value=v;
 }
@@ -321,13 +326,14 @@ let adminKey="";
 function renderAdmin(){
   if(!isAdmin)return;
   const all=allStores(),sel=$("aStore"),v=sel.value;
-  sel.innerHTML=all.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join("");
+  sel.innerHTML=all.map(s=>`<option value="${esc(s)}">${esc(label(s))}</option>`).join("");
   if(v&&all.includes(v))sel.value=v;
   const n=sel.value,k=n+JSON.stringify(menuOf(n));
   if(k!==adminKey){adminKey=k;$("menuRows").innerHTML=menuOf(n).map(rowHtml).join("")}
   $("aMeta").textContent=n?("價格資料:"+(stampOf(n).trim()||"無")):"";
   $("delStore").hidden=!db.custom.includes(n);
-  $("visList").innerHTML=`<div class="row">`+all.map(s=>`<label><input type="checkbox" data-vis="${esc(s)}" ${db.hidden.includes(s)?"":"checked"}>${esc(s)}</label>`).join("")+"</div>";
+  if(document.activeElement!==$("aName")&&$("aName").dataset.for!==n+"|"+label(n)){$("aName").value=db.names[n]||"";$("aName").dataset.for=n+"|"+label(n)}
+  $("visList").innerHTML=`<div class="row">`+all.map(s=>`<label><input type="checkbox" data-vis="${esc(s)}" ${db.hidden.includes(s)?"":"checked"}>${esc(label(s))}</label>`).join("")+"</div>";
   $("visErr").textContent=db.hiddenErr||"";
 }
 function setView(v){
@@ -335,7 +341,15 @@ function setView(v){
   document.querySelectorAll("#viewTabs .tab").forEach(t=>t.classList.toggle("on",t.dataset.view===v));
 }
 $("viewTabs").onclick=e=>{const t=e.target.closest(".tab");if(t)setView(t.dataset.view)};
-$("aStore").onchange=()=>{adminKey="";renderAdmin()};
+$("aStore").onchange=()=>{adminKey="";$("aName").dataset.for="";renderAdmin()};
+$("saveName").onclick=async()=>{
+  const n=$("aStore").value;if(!n)return;
+  const v=$("aName").value.trim().slice(0,40),m={...db.names};
+  if(v&&v!==n)m[n]=v;else delete m[n];
+  const dup=allStores().find(s=>s!==n&&label(s)===(v||n));
+  if(dup&&!confirm(`已有另一家店也叫「${label(dup)}」,仍要使用同樣名稱嗎?`))return;
+  try{await B.setNames(m);$("aName").dataset.for="";alert(v?"已儲存顯示名稱":"已還原為原名")}catch(e){alert("儲存失敗:"+(e.message||e))}
+};
 $("visList").onchange=e=>{
   if(e.target.dataset.vis==null)return;
   const hid=[...document.querySelectorAll("#visList [data-vis]")].filter(c=>!c.checked).map(c=>c.dataset.vis);
@@ -369,7 +383,7 @@ function dayOrders(){return db.orders.filter(o=>o.date===$("date").value)}
 function renderTabs(){
   const list=dayOrders();
   if(!list.find(o=>o.id===curOrder))curOrder=list[0]?.id||null;
-  $("orderTabs").innerHTML=list.map(o=>`<span class="tab ${o.id===curOrder?"on":""}" data-id="${o.id}">${esc(o.store)} (${o.items.reduce((a,i)=>a+i.qty,0)}杯)</span>`).join("")||'<span class="hint">這天還沒有訂單,請按「新增這天的訂單」</span>';
+  $("orderTabs").innerHTML=list.map(o=>`<span class="tab ${o.id===curOrder?"on":""}" data-id="${o.id}">${esc(label(o.store))} (${o.items.reduce((a,i)=>a+i.qty,0)}杯)</span>`).join("")||'<span class="hint">這天還沒有訂單,請按「新增這天的訂單」</span>';
   const o=cur();$("main").hidden=!o;
   if(o){const k=o.store+JSON.stringify(menuOf(o.store));if(k!==menuKey){menuKey=k;renderMenu()}renderCart();renderNames();renderLock();renderPay();renderFavs()}
 }
@@ -378,7 +392,7 @@ const cur=()=>db.orders.find(o=>o.id===curOrder);
 function renderMenu(){
   const o=cur(),m=menuOf(o.store);picked=null;$("picked").textContent="請先點選左側品項";
   const mt=meta[o.store];
-  $("menuTitle").textContent="— "+o.store+(ddOf(o)?`(價格資料 ${ddOf(o)})`:mt?.status==="pending"?"(價格待確認)":"");
+  $("menuTitle").textContent="— "+label(o.store)+(ddOf(o)?`(價格資料 ${ddOf(o)})`:mt?.status==="pending"?"(價格待確認)":"");
   $("menu").innerHTML=m.map((x,i)=>`<div class="mi" data-i="${i}"><span>${esc(x[0])}</span><small>中 $${x[1]}${x[2]?" / 大 $"+x[2]:""}</small></div>`).join("");
 }
 function renderNames(){
@@ -396,7 +410,7 @@ function summarize(o){
 }
 function renderCart(){
   const o=cur(),S=summarize(o),n=S.cups,sum=S.total;
-  $("cartMeta").textContent=`— ${o.date} ${o.store}`;
+  $("cartMeta").textContent=`— ${o.date} ${label(o.store)}`;
   $("cart").innerHTML=o.items.length?`<tr><th>訂購人</th><th>品項</th><th>規格</th><th>數量</th><th>小計</th><th></th></tr>`+
    o.items.map(i=>`<tr><td>${esc(i.who)}</td><td>${esc(i.name)}</td><td>${spec(i)}</td><td>${i.qty}</td><td>$${price(i)}</td><td><button class="sm ghost" data-del="${i.id}">刪</button></td></tr>`).join(""):'<tr><td class="hint">購物車是空的</td></tr>';
   $("cartSum").innerHTML=o.items.length?`<div class="sec">② 依姓名小計</div><div style="overflow-x:auto"><table><tr><th>訂購人</th><th>杯數</th><th>小計</th></tr>`+
@@ -572,7 +586,7 @@ $("addStore").onclick=()=>{
 
 function buildText(){
   const o=cur();if(!o.items.length)return null;
-  const L=[`【飲料訂單】${o.date} ${o.store}`,""];if(ddOf(o))L.splice(1,0,`價格資料日期:${ddOf(o)}`);
+  const L=[`【飲料訂單】${o.date} ${label(o.store)}`,""];if(ddOf(o))L.splice(1,0,`價格資料日期:${ddOf(o)}`);
   const S=summarize(o);
   L.push("① 明細");
   Object.entries(S.by).forEach(([w,a])=>{L.push(w+":");a.items.forEach(i=>L.push(`  ${i.name} x${i.qty} ${specPlain(i)} $${price(i)}`))});
@@ -597,7 +611,7 @@ $("mkImg").onclick=()=>{
   g.fillStyle="#fff";g.fillRect(0,0,W,H);
   g.fillStyle="#c8553d";g.fillRect(0,0,W,70);
   g.fillStyle="#fff";g.font=`bold 24px ${F}`;g.fillText("飲料訂單",24,34);
-  g.font=`15px ${F}`;g.fillText(`${o.date}  ${o.store}${ddOf(o)?"  價格資料 "+ddOf(o):""}`,24,58);
+  g.font=`15px ${F}`;g.fillText(`${o.date}  ${label(o.store)}${ddOf(o)?"  價格資料 "+ddOf(o):""}`,24,58);
   g.fillStyle="#c8553d";g.font=`bold 15px ${F}`;g.fillText("① 明細",24,96);
   let y=118;g.fillStyle="#888";g.font=`13px ${F}`;
   [["訂購人",24],["品項",120],["規格 / 備註",270],["數量",580],["小計",650]].forEach(([t,x])=>g.fillText(t,x,y));
@@ -684,7 +698,7 @@ function renderHist(){
   $("hist").innerHTML=`<p class="hint">${L.length} 張訂單、共 ${cups} 杯、合計 $${sum}</p>`+
    `<h2 style="margin-top:10px">每人累計</h2>`+tbl(["姓名","杯數","金額","未付款"],Object.entries(ppl).sort((a,b)=>b[1].sum-a[1].sum).map(([w,a])=>`<tr><td>${esc(w)}</td><td>${a.cups}</td><td>$${a.sum}</td><td class="${a.unpaid?"unpaid":"paid"}">${a.unpaid?"$"+a.unpaid:"✓"}</td></tr>`))+
    `<h2 style="margin-top:12px">熱門品項</h2>`+tbl(["品項","杯數"],Object.entries(items).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([n,c])=>`<tr><td>${esc(n)}</td><td>${c}</td></tr>`))+
-   `<h2 style="margin-top:12px">訂單列表 <span class="hint">(點一下開啟)</span></h2>`+tbl(["日期","店家","杯數","金額"],L.map(o=>{const q=o.items.reduce((a,i)=>a+i.qty,0);return `<tr class="mi" style="display:table-row" data-jump="${o.id}"><td>${o.date}</td><td>${esc(o.store)}</td><td>${q}</td><td>$${o.items.reduce((a,i)=>a+price(i),0)}</td></tr>`}));
+   `<h2 style="margin-top:12px">訂單列表 <span class="hint">(點一下開啟)</span></h2>`+tbl(["日期","店家","杯數","金額"],L.map(o=>{const q=o.items.reduce((a,i)=>a+i.qty,0);return `<tr class="mi" style="display:table-row" data-jump="${o.id}"><td>${o.date}</td><td>${esc(label(o.store))}</td><td>${q}</td><td>$${o.items.reduce((a,i)=>a+price(i),0)}</td></tr>`}));
 }
 $("hRange").onchange=renderHist;
 $("hist").onclick=e=>{
