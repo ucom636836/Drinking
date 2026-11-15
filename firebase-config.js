@@ -7,5 +7,6 @@ export default {
   projectId: "c636-drink",
   storageBucket: "c636-drink.firebasestorage.app",
   messagingSenderId: "398931802870",
-  appId: "1:398931802870:web:9c6593b88abc7ff7980ad7"
+  appId: "1:398931802870:web:9c6593b88abc7ff7980ad7",
+  adminHash: "f5d496412945e15e4fd1efb147ebcc716d9b3d7a8fab7312891a90c0b97867b3"
 };
