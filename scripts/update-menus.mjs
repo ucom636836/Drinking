@@ -60,7 +60,19 @@ ${old}${text ? "頁面文字:" + text.slice(0, MAX_TEXT) : ""}`;
   const out = (await r.json()).content?.map(b => b.text || "").join("") || "";
   const m = out.match(/\{[\s\S]*\}/);
   if (!m) throw new Error("模型回覆不含 JSON");
-  return JSON.parse(m[0]).menu;
+  return normalize(JSON.parse(m[0]).menu);
+}
+
+// 整理模型回覆:數字字串轉數字;只有單一容量的品項(中杯 0、價格在大杯)改成中杯價、大杯 0
+function normalize(menu) {
+  if (!Array.isArray(menu)) return menu;
+  const num = v => (typeof v === "string" && /^\d+$/.test(v.trim()) ? Number(v) : v == null ? 0 : v);
+  return menu.map(it => {
+    if (!Array.isArray(it)) return it;
+    let [n, m, l] = [it[0], num(it[1]), num(it[2])];
+    if (m === 0 && Number.isInteger(l) && l > 0) { m = l; l = 0; }
+    return [n, m, l];
+  });
 }
 
 // 驗證:回傳錯誤訊息陣列(空 = 通過)
@@ -73,7 +85,7 @@ function validate(menu, text, oldMenu, checkNums) {
     const [n, m, l] = it;
     if (!Number.isInteger(m) || m <= 0 || !Number.isInteger(l) || l < 0) errs.push(`${n} 價格不是正整數`);
     else if (l && l < m) errs.push(`${n} 大杯低於中杯`);
-    else if (checkNums && !nums.has(m) || (l && !nums.has(l))) errs.push(`${n} 的價格未出現在來源頁面`);
+    else if (checkNums && (!nums.has(m) || (l && !nums.has(l)))) errs.push(`${n} 的價格未出現在來源頁面`);
   }
   if (oldMenu && menu.length < oldMenu.length / 2) errs.push(`品項數 ${oldMenu.length} → ${menu.length},減少超過一半`);
   return errs;
@@ -120,7 +132,11 @@ for (const [store, src] of Object.entries(sources)) {
     const menu = await askClaude(store, text.trim(), files, old.menu);
     // 純文字來源可檢查價格是否出現在頁面;含圖片/PDF 時無法比對,改靠格式與異常檢查
     const errs = validate(menu, text, old.menu, files.length === 0);
-    if (errs.length) throw new Error("驗證未通過:" + errs.slice(0, 5).join(";"));
+    if (errs.length) {
+      const bad = (menu || []).filter(it => !Array.isArray(it) || !Number.isInteger(it[1]) || it[1] <= 0 || !Number.isInteger(it[2]) || it[2] < 0).slice(0, 5);
+      if (bad.length) console.warn(store, "被拒品項範例:", JSON.stringify(bad));
+      throw new Error("驗證未通過:" + errs.slice(0, 5).join(";"));
+    }
     const lines = diff(old.menu, menu);
     result.stores[store] = { status: lines.length ? "new" : "none", updated: today, source: used, menu };
     if (lines.length) { changed++; report.push(`### ${store}\n來源:${used}\n\n${lines.slice(0, 40).map(l => "- " + l).join("\n")}${lines.length > 40 ? "\n- …另有 " + (lines.length - 40) + " 項變動" : ""}`); }
