@@ -33,6 +33,8 @@ th,td{text-align:left;padding:6px 4px;border-bottom:1px solid var(--line);vertic
 th{color:var(--mute);font-weight:500;font-size:12px}
 .tot{font-weight:700;text-align:right;margin-top:8px}
 textarea{min-height:150px;font-family:inherit}
+.irow{display:grid;grid-template-columns:1fr 84px 84px 38px;gap:6px;margin-bottom:6px;align-items:center}
+.irow input{min-width:0}
 .hint{color:var(--mute);font-size:12px}
 .sel{margin:6px 0;font-weight:600}
 details summary{cursor:pointer;color:var(--pri)}
@@ -126,8 +128,10 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
       <button class="ghost" id="priceUpdate" title="讀取 menu-updates.json 並更新菜單價格">🔄 價格更新</button>
     </div>
     <div class="hint" id="aMeta" style="margin:6px 0"></div>
-    <p class="hint">每行一品項:品名,中杯價,大杯價(無大杯可省略)。菜單與價格為參考範例,請以店家現行菜單為準。</p>
-    <textarea id="menuEdit"></textarea>
+    <p class="hint">逐項填寫品名、中杯價、大杯價(沒有大杯就留空)。菜單與價格為參考範例,請以店家現行菜單為準。</p>
+    <div class="irow hint"><span>品名</span><span>中杯</span><span>大杯</span><span></span></div>
+    <div id="menuRows"></div>
+    <button class="sm ghost" id="addItem" style="margin-top:4px">＋ 新增品項</button>
     <div style="margin-top:8px">
       <button class="sm" id="saveMenu">儲存菜單</button>
       <button class="sm ghost" id="resetMenu">還原預設</button>
@@ -293,7 +297,7 @@ function renderAdmin(){
   sel.innerHTML=all.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join("");
   if(v&&all.includes(v))sel.value=v;
   const n=sel.value,k=n+JSON.stringify(menuOf(n));
-  if(k!==adminKey){adminKey=k;$("menuEdit").value=menuOf(n).map(x=>x.join(",")).join("\n")}
+  if(k!==adminKey){adminKey=k;$("menuRows").innerHTML=menuOf(n).map(rowHtml).join("")}
   $("aMeta").textContent=n?("價格資料:"+(stampOf(n).trim()||"無")):"";
   $("delStore").hidden=!db.custom.includes(n);
   $("visList").innerHTML=`<div class="row">`+all.map(s=>`<label><input type="checkbox" data-vis="${esc(s)}" ${db.hidden.includes(s)?"":"checked"}>${esc(s)}</label>`).join("")+"</div>";
@@ -393,9 +397,23 @@ $("add").onclick=()=>{
 $("cart").onclick=e=>{const id=e.target.dataset.del;if(id){const o=cur();if(isLocked(o))return alert("此訂單已收單");B.delItem(o.id,o.items.find(i=>i.id===id))}};
 $("clearCart").onclick=()=>{if(isLocked(cur()))return alert("此訂單已收單");if(confirm("確定清空購物車?"))B.clearItems(curOrder)};
 $("delOrder").onclick=()=>{if(confirm("確定刪除整張訂單?"))B.delOrder(curOrder)};
+const rowHtml=x=>`<div class="irow"><input class="in-n" value="${esc(x[0]||"")}" placeholder="品名"><input class="in-m" type="number" min="1" inputmode="numeric" value="${x[1]||""}" placeholder="中杯"><input class="in-l" type="number" min="0" inputmode="numeric" value="${x[2]||""}" placeholder="大杯"><button class="sm ghost" data-rm title="刪除此品項">✕</button></div>`;
+$("addItem").onclick=()=>{
+  $("menuRows").insertAdjacentHTML("beforeend",rowHtml([]));
+  $("menuRows").lastElementChild.querySelector(".in-n").focus();
+};
+$("menuRows").onclick=e=>{if(e.target.closest("[data-rm]"))e.target.closest(".irow").remove()};
 $("saveMenu").onclick=()=>{
-  const m=$("menuEdit").value.split("\n").map(l=>l.split(/[,，]/).map(s=>s.trim())).filter(a=>a[0]&&+a[1]>0).map(a=>[a[0],+a[1],+a[2]||0]);
-  if(!m.length)return alert("格式錯誤");
+  const rows=[...document.querySelectorAll("#menuRows .irow")];
+  const m=[],bad=[];
+  rows.forEach((r,i)=>{
+    const name=r.querySelector(".in-n").value.trim(),mid=+r.querySelector(".in-m").value,lg=+r.querySelector(".in-l").value||0;
+    if(!name&&!mid&&!lg)return;
+    if(!name||!(mid>0)||lg<0||(lg&&lg<mid))bad.push(`第 ${i+1} 列`);
+    else m.push([name,mid,lg]);
+  });
+  if(bad.length)return alert("以下品項資料不完整或大杯低於中杯,請修正:\n"+bad.join("、"));
+  if(!m.length)return alert("至少要有一個品項");
   const n=$("aStore").value;Promise.resolve(B.saveMenu(n,m)).then(()=>alert("已儲存:"+n)).catch(e=>alert("儲存失敗:"+(e.message||e)));
 };
 $("resetMenu").onclick=()=>{const n=$("aStore").value;if(n&&confirm(`確定將「${n}」還原預設?`)){adminKey="";B.resetMenu(n)}};
