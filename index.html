@@ -35,6 +35,7 @@ th{color:var(--mute);font-weight:500;font-size:12px}
 textarea{min-height:150px;font-family:inherit}
 .irow{display:grid;grid-template-columns:1fr 84px 84px 38px;gap:6px;margin-bottom:6px;align-items:center}
 .irow input{min-width:0}
+.sec{font-weight:700;color:var(--pri);margin:14px 0 4px}
 .irow.bad input{border-color:var(--pri);background:rgba(200,85,61,.14)}
 .drop{border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--mute);margin-bottom:8px}
 .drop:focus{outline:none;border-color:var(--pri)}
@@ -99,7 +100,9 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
     <button class="ghost" id="lockBtn">🔒 收單</button>
     <span class="hint" id="lockState"></span>
   </div>
+  <div class="sec" style="margin-top:0">① 明細</div>
   <div style="overflow-x:auto"><table id="cart"></table></div>
+  <div id="cartSum"></div>
   <div class="tot" id="total"></div>
   <div id="pay" style="margin-top:12px"></div>
   <div class="row" style="margin-top:12px">
@@ -383,12 +386,24 @@ function renderNames(){
   $("whoList").innerHTML=names.map(n=>`<option value="${esc(n)}">`).join("");
 }
 function price(i){return (i.price+i.top)*i.qty}
+function summarize(o){
+  const by={},grp={};
+  o.items.forEach(i=>{
+    const a=by[i.who]=by[i.who]||{items:[],cups:0,sum:0};a.items.push(i);a.cups+=i.qty;a.sum+=price(i);
+    const k=`${i.name} ${specPlain({...i,note:""})}`;grp[k]=(grp[k]||0)+i.qty;
+  });
+  return {by,grp,cups:o.items.reduce((a,i)=>a+i.qty,0),total:o.items.reduce((a,i)=>a+price(i),0)};
+}
 function renderCart(){
-  const o=cur(),n=o.items.reduce((a,i)=>a+i.qty,0),sum=o.items.reduce((a,i)=>a+price(i),0);
+  const o=cur(),S=summarize(o),n=S.cups,sum=S.total;
   $("cartMeta").textContent=`— ${o.date} ${o.store}`;
   $("cart").innerHTML=o.items.length?`<tr><th>訂購人</th><th>品項</th><th>規格</th><th>數量</th><th>小計</th><th></th></tr>`+
    o.items.map(i=>`<tr><td>${esc(i.who)}</td><td>${esc(i.name)}</td><td>${spec(i)}</td><td>${i.qty}</td><td>$${price(i)}</td><td><button class="sm ghost" data-del="${i.id}">刪</button></td></tr>`).join(""):'<tr><td class="hint">購物車是空的</td></tr>';
-  $("total").textContent=`共 ${n} 杯,合計 $${sum}`;
+  $("cartSum").innerHTML=o.items.length?`<div class="sec">② 依姓名小計</div><div style="overflow-x:auto"><table><tr><th>訂購人</th><th>杯數</th><th>小計</th></tr>`+
+   Object.entries(S.by).map(([w,a])=>`<tr><td>${esc(w)}</td><td>${a.cups}</td><td>$${a.sum}</td></tr>`).join("")+
+   `</table></div><div class="sec">③ 相同品項數量</div><div style="overflow-x:auto"><table><tr><th>品項 / 規格</th><th>數量</th></tr>`+
+   Object.entries(S.grp).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join("")+`</table></div>`:"";
+  $("total").textContent=`④ 總金額:共 ${n} 杯,合計 $${sum}`;
 }
 function spec(i){return [i.size==="l"?"大杯":"中杯",i.sweet,i.ice,i.topName!=="不加料"?i.topName:"",i.note].filter(Boolean).map(esc).join(" / ")}
 function specPlain(i){return [i.size==="l"?"大杯":"中杯",i.sweet,i.ice,i.topName!=="不加料"?i.topName:"",i.note?`(${i.note})`:""].filter(Boolean).join(" ")}
@@ -558,11 +573,12 @@ $("addStore").onclick=()=>{
 function buildText(){
   const o=cur();if(!o.items.length)return null;
   const L=[`【飲料訂單】${o.date} ${o.store}`,""];if(ddOf(o))L.splice(1,0,`價格資料日期:${ddOf(o)}`);
-  const by={};o.items.forEach(i=>(by[i.who]=by[i.who]||[]).push(i));
-  Object.entries(by).forEach(([w,a])=>{L.push(w+":");a.forEach(i=>L.push(`  ${i.name} x${i.qty} ${specPlain(i)} $${price(i)}`))});
-  const sum={};o.items.forEach(i=>{const k=`${i.name} ${specPlain({...i,note:""})}`;sum[k]=(sum[k]||0)+i.qty});
-  L.push("","── 品項統計 ──");Object.entries(sum).forEach(([k,v])=>L.push(`${k} x${v}`));
-  L.push("",`共 ${o.items.reduce((a,i)=>a+i.qty,0)} 杯,合計 $${o.items.reduce((a,i)=>a+price(i),0)}`);
+  const S=summarize(o);
+  L.push("① 明細");
+  Object.entries(S.by).forEach(([w,a])=>{L.push(w+":");a.items.forEach(i=>L.push(`  ${i.name} x${i.qty} ${specPlain(i)} $${price(i)}`))});
+  L.push("","② 依姓名小計");Object.entries(S.by).forEach(([w,a])=>L.push(`${w} ${a.cups} 杯 $${a.sum}`));
+  L.push("","③ 相同品項數量");Object.entries(S.grp).forEach(([k,v])=>L.push(`${k} x${v}`));
+  L.push("","④ 總金額",`共 ${S.cups} 杯,合計 $${S.total}`);
   return L.join("\n");
 }
 $("mkText").onclick=()=>{const t=buildText();if(!t)return alert("購物車是空的");$("txt").value=t;$("out").hidden=false;$("copied").textContent=""};
@@ -573,17 +589,17 @@ $("copy").onclick=async()=>{
 $("mkImg").onclick=()=>{
   const o=cur();if(!o.items.length)return alert("購物車是空的");
   const F='"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif',S=2,W=760,rowH=34;
-  const by={};o.items.forEach(i=>(by[i.who]=by[i.who]||[]).push(i));
-  const rows=[];Object.entries(by).forEach(([w,a])=>a.forEach((i,k)=>rows.push({w:k?"":w,i})));
-  const sum={};o.items.forEach(i=>{const k=`${i.name} ${specPlain({...i,note:""})}`;sum[k]=(sum[k]||0)+i.qty});
+  const Q=summarize(o),people=Object.entries(Q.by),sum=Q.grp;
+  const rows=[];people.forEach(([w,a])=>a.items.forEach((i,k)=>rows.push({w:k?"":w,i})));
   const sumKeys=Object.keys(sum);
-  const H=120+rows.length*rowH+60+sumKeys.length*26+70;
+  const H=148+rows.length*rowH+76+(people.length+sumKeys.length)*26+80;
   const c=$("cv");c.width=W*S;c.height=H*S;const g=c.getContext("2d");g.scale(S,S);
   g.fillStyle="#fff";g.fillRect(0,0,W,H);
   g.fillStyle="#c8553d";g.fillRect(0,0,W,70);
   g.fillStyle="#fff";g.font=`bold 24px ${F}`;g.fillText("飲料訂單",24,34);
   g.font=`15px ${F}`;g.fillText(`${o.date}  ${o.store}${ddOf(o)?"  價格資料 "+ddOf(o):""}`,24,58);
-  let y=100;g.fillStyle="#888";g.font=`13px ${F}`;
+  g.fillStyle="#c8553d";g.font=`bold 15px ${F}`;g.fillText("① 明細",24,96);
+  let y=118;g.fillStyle="#888";g.font=`13px ${F}`;
   [["訂購人",24],["品項",120],["規格 / 備註",270],["數量",580],["小計",650]].forEach(([t,x])=>g.fillText(t,x,y));
   g.strokeStyle="#ddd";g.beginPath();g.moveTo(24,y+8);g.lineTo(W-24,y+8);g.stroke();y+=rowH-4;
   const fit=(t,max)=>{while(g.measureText(t).width>max&&t.length>1)t=t.slice(0,-1);return t};
@@ -595,12 +611,16 @@ $("mkImg").onclick=()=>{
     g.fillStyle="#222";g.font=`15px ${F}`;g.fillText(String(r.i.qty),590,y);g.fillText("$"+price(r.i),650,y);
     y+=rowH;
   });
-  y+=14;g.fillStyle="#c8553d";g.font=`bold 15px ${F}`;g.fillText("品項統計",24,y);y+=24;
+  y+=14;g.fillStyle="#c8553d";g.font=`bold 15px ${F}`;g.fillText("② 依姓名小計",24,y);y+=24;
+  g.fillStyle="#333";g.font=`14px ${F}`;
+  people.forEach(([w,a])=>{g.fillText(fit(w,300),24,y);g.fillText(a.cups+" 杯",420,y);g.fillText("$"+a.sum,650,y);y+=26});
+  y+=14;g.fillStyle="#c8553d";g.font=`bold 15px ${F}`;g.fillText("③ 相同品項數量",24,y);y+=24;
   g.fillStyle="#333";g.font=`14px ${F}`;
   sumKeys.forEach(k=>{g.fillText(fit(k,600),24,y);g.fillText("x"+sum[k],650,y);y+=26});
   y+=10;g.strokeStyle="#c8553d";g.beginPath();g.moveTo(24,y-14);g.lineTo(W-24,y-14);g.stroke();
-  g.fillStyle="#c8553d";g.font=`bold 20px ${F}`;g.textAlign="right";
-  g.fillText(`共 ${o.items.reduce((a,i)=>a+i.qty,0)} 杯 　合計 $${o.items.reduce((a,i)=>a+price(i),0)}`,W-24,y+14);
+  g.fillStyle="#c8553d";g.font=`bold 15px ${F}`;g.fillText("④ 總金額",24,y+12);
+  g.font=`bold 20px ${F}`;g.textAlign="right";
+  g.fillText(`共 ${Q.cups} 杯 　合計 $${Q.total}`,W-24,y+14);
   g.textAlign="left";
   $("imgOut").hidden=false;
 };
