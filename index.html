@@ -35,6 +35,12 @@ th{color:var(--mute);font-weight:500;font-size:12px}
 textarea{min-height:150px;font-family:inherit}
 .irow{display:grid;grid-template-columns:1fr 84px 84px 38px;gap:6px;margin-bottom:6px;align-items:center}
 .irow input{min-width:0}
+.irow.bad input{border-color:var(--pri);background:rgba(200,85,61,.14)}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--mute);margin-bottom:8px}
+.drop:focus{outline:none;border-color:var(--pri)}
+.thumb{position:relative;display:inline-block;margin:4px 6px 4px 0}
+.thumb img{height:72px;border-radius:6px;border:1px solid var(--line);display:block}
+.thumb button{position:absolute;top:2px;right:2px;padding:0 6px;background:var(--card)}
 .hint{color:var(--mute);font-size:12px}
 .sel{margin:6px 0;font-weight:600}
 details summary{cursor:pointer;color:var(--pri)}
@@ -139,6 +145,21 @@ canvas{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:
     </div>
   </div>
   <div class="card">
+    <h2>用圖片或文字辨識價目表</h2>
+    <p class="hint">在此頁按 Ctrl+V 貼上價目表截圖或複製來的文字,也可選擇檔案或拖放(最多 5 張圖)。辨識結果會填進上方「編輯店家價目表」的輸入框,檢查後按「儲存菜單」才會寫入。</p>
+    <div class="drop" id="ocrDrop" tabindex="0">按 Ctrl+V 貼上圖片或文字,或把圖片拖進來</div>
+    <div id="ocrThumbs"></div>
+    <textarea id="ocrText" style="min-height:90px" placeholder="也可以貼上複製來的菜單文字(例:紅茶 30/40)"></textarea>
+    <div style="margin-top:8px">
+      <button class="sm" id="ocrRun">開始辨識</button>
+      <button class="sm ghost" id="ocrPick">選擇圖片</button>
+      <button class="sm ghost" id="ocrClear">清除</button>
+      <input type="file" id="ocrFile" accept="image/*" multiple hidden>
+    </div>
+    <div class="hint" id="ocrStatus" style="margin-top:6px"></div>
+    <div class="hint" style="margin-top:6px"><span id="ocrKeyState"></span> <button class="sm ghost" id="ocrKey">設定 / 清除 API key</button><br>API key 只存在這個瀏覽器,辨識時由瀏覽器直接送給 Anthropic,不會進入網站程式碼或資料庫。建議使用專用、額度小的 key,且只在自己的電腦使用。</div>
+  </div>
+  <div class="card">
     <h2>新增自訂店家</h2>
     <div class="row"><label>店名<input id="customName" placeholder="例:某某茶飲 (大安店)"></label><button class="sm" id="addStore">新增</button></div>
   </div>
@@ -175,7 +196,7 @@ const TOP=[["不加料",0],["珍珠",10],["椰果",10],["仙草凍",10],["布丁
 
 const $=id=>document.getElementById(id);
 const KEY="drink-order-v1";
-const db={orders:[],menus:{},custom:[],hidden:[]};
+const db={orders:[],menus:{},custom:[],hidden:[],updated:{}};
 let isAdmin=false;
 let curOrder=null,picked=null,menuKey="";
 let B;
@@ -193,7 +214,7 @@ const local={
   async clearItems(id){db.orders.find(o=>o.id===id).items=[];this.persist()},
   async setHidden(a){db.hidden=a;this.persist()},
   async delStore(n){db.custom=db.custom.filter(x=>x!==n);delete db.menus[n];this.persist()},
-  async saveMenu(n,m){db.menus[n]=m;this.persist()},
+  async saveMenu(n,m,u){db.menus[n]=m;db.updated=db.updated||{};if(u)db.updated[n]=u;this.persist()},
   async resetMenu(n){delete db.menus[n];this.persist()},
   async addStore(n,m){db.custom.push(n);db.menus[n]=m;this.persist()}
 };
@@ -246,10 +267,10 @@ async function makeFirebase(cfg){
       await new Promise((res,rej)=>{let n=0;const ok=()=>{if(++n===2)res()};
         F.onSnapshot(F.collection(fdb,"orders"),sn=>{db.orders=sn.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.created||0)-(b.created||0));onData();ok()},rej);
         F.onSnapshot(F.doc(fdb,"settings","storeVisibility"),sn=>{db.hidden=sn.exists()?(sn.data().hidden||[]):[];db.hiddenErr="";onData()},e=>{console.warn("讀取店家顯示設定失敗",e);db.hiddenErr="無法讀取/儲存「顯示設定」:請確認 firestore.rules 已加入 settings 規則並發布。";onData()});
-        F.onSnapshot(F.collection(fdb,"stores"),sn=>{db.menus={};db.custom=[];sn.docs.forEach(d=>{const x=d.data();db.menus[x.name]=JSON.parse(x.items);if(x.custom)db.custom.push(x.name)});onData();ok()},rej);
+        F.onSnapshot(F.collection(fdb,"stores"),sn=>{db.menus={};db.custom=[];db.updated={};sn.docs.forEach(d=>{const x=d.data();db.menus[x.name]=JSON.parse(x.items);if(x.updated)db.updated[x.name]=x.updated;if(x.custom)db.custom.push(x.name)});onData();ok()},rej);
       });
     },
-    addOrder:o=>F.setDoc(od(o.id),{date:o.date,store:o.store,items:[],created:Date.now()}),
+    addOrder:o=>F.setDoc(od(o.id),{date:o.date,store:o.store,items:[],created:Date.now(),dataDate:o.dataDate||""}),
     delOrder:id=>F.deleteDoc(od(id)),
     setOrder:(id,p)=>F.updateDoc(od(id),p),
     setPaid:(id,w,on)=>F.updateDoc(od(id),{paid:on?F.arrayUnion(w):F.arrayRemove(w)}),
@@ -258,7 +279,7 @@ async function makeFirebase(cfg){
     clearItems:id=>F.updateDoc(od(id),{items:[]}),
     setHidden:a=>F.setDoc(F.doc(fdb,"settings","storeVisibility"),{hidden:a}),
     delStore:n=>F.deleteDoc(sd(n)),
-    saveMenu:(n,m)=>F.setDoc(sd(n),{name:n,items:JSON.stringify(m),custom:db.custom.includes(n)}),
+    saveMenu:(n,m,u)=>F.setDoc(sd(n),{name:n,items:JSON.stringify(m),custom:db.custom.includes(n),updated:u||db.updated[n]||""}),
     resetMenu:n=>db.custom.includes(n)?F.setDoc(sd(n),{name:n,items:JSON.stringify([["範例飲料",50,60]]),custom:true}):F.deleteDoc(sd(n)),
     addStore:(n,m)=>F.setDoc(sd(n),{name:n,items:JSON.stringify(m),custom:true})
   };
@@ -274,7 +295,9 @@ const TAG={new:"(新)",pending:"(待確認)",none:"(無)"};
 /* 標籤與資料日期來自 menu-updates.json(所有人一致),不再存在 localStorage */
 let meta={};
 const fmtDate=d=>d?d.slice(5).replace("-","/"):"";
-const stampOf=s=>{const m=meta[s];if(!m)return "";const u=m.updated||"";return (TAG[m.status]||"")+(u?" "+fmtDate(u):"")};
+const dataDate=n=>{const a=meta[n]?.updated||"",b=db.updated?.[n]||"";return a>b?a:b};
+const ddOf=o=>o.dataDate||dataDate(o.store);
+const stampOf=s=>{const m=meta[s];if(!m&&!db.updated?.[s])return "";const u=dataDate(s);return (TAG[m?.status]||"")+(u?" "+fmtDate(u):"")};
 async function loadMeta(){
   try{
     const r=await fetch("menu-updates.json",{cache:"no-store"});if(!r.ok)throw 0;
@@ -352,7 +375,7 @@ const cur=()=>db.orders.find(o=>o.id===curOrder);
 function renderMenu(){
   const o=cur(),m=menuOf(o.store);picked=null;$("picked").textContent="請先點選左側品項";
   const mt=meta[o.store];
-  $("menuTitle").textContent="— "+o.store+(mt?.updated?`(價格資料 ${mt.updated})`:mt?.status==="pending"?"(價格待確認)":"");
+  $("menuTitle").textContent="— "+o.store+(ddOf(o)?`(價格資料 ${ddOf(o)})`:mt?.status==="pending"?"(價格待確認)":"");
   $("menu").innerHTML=m.map((x,i)=>`<div class="mi" data-i="${i}"><span>${esc(x[0])}</span><small>中 $${x[1]}${x[2]?" / 大 $"+x[2]:""}</small></div>`).join("");
 }
 function renderNames(){
@@ -372,7 +395,7 @@ function specPlain(i){return [i.size==="l"?"大杯":"中杯",i.sweet,i.ice,i.top
 
 $("date").onchange=renderTabs;
 $("newOrder").onclick=()=>{
-  const o={id:uid(),date:$("date").value,store:$("store").value,items:[]};
+  const o={id:uid(),date:$("date").value,store:$("store").value,items:[]};o.dataDate=dataDate(o.store);
   if(!o.date)return alert("請選擇日期");
   curOrder=o.id;B.addOrder(o);
 };
@@ -415,9 +438,101 @@ $("saveMenu").onclick=()=>{
   });
   if(bad.length)return alert("以下品項資料不完整或大杯低於中杯,請修正:\n"+bad.join("、"));
   if(!m.length)return alert("至少要有一個品項");
-  const n=$("aStore").value;Promise.resolve(B.saveMenu(n,m)).then(()=>alert("已儲存:"+n)).catch(e=>alert("儲存失敗:"+(e.message||e)));
+  const n=$("aStore").value;Promise.resolve(B.saveMenu(n,m,today())).then(()=>alert("已儲存:"+n)).catch(e=>alert("儲存失敗:"+(e.message||e)));
 };
 $("resetMenu").onclick=()=>{const n=$("aStore").value;if(n&&confirm(`確定將「${n}」還原預設?`)){adminKey="";B.resetMenu(n)}};
+
+/* ===== 圖片/文字辨識價目表(管理員;瀏覽器直接呼叫 Anthropic API,key 只存 localStorage) ===== */
+const KEYSTORE="drink-anthropic-key",OCR_MODEL="claude-sonnet-5-5",NL=String.fromCharCode(10);
+let ocrImgs=[];
+const getKey=()=>{try{return localStorage.getItem(KEYSTORE)||""}catch(e){return ""}};
+const renderKeyState=()=>{$("ocrKeyState").textContent=getKey()?"已設定 API key。":"尚未設定 API key。"};
+async function setKey(){
+  const v=(await askPassword("請輸入 Anthropic API key(只存在這個瀏覽器;留空會清除)")).trim();
+  try{v?localStorage.setItem(KEYSTORE,v):localStorage.removeItem(KEYSTORE)}catch(e){}
+  renderKeyState();return v;
+}
+function imgToBlock(file){return new Promise((res,rej)=>{
+  const url=URL.createObjectURL(file),im=new Image();
+  im.onload=()=>{
+    const M=2400,k=Math.min(1,M/Math.max(im.width,im.height)),c=document.createElement("canvas");
+    c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);
+    const g=c.getContext("2d");g.fillStyle="#fff";g.fillRect(0,0,c.width,c.height);g.drawImage(im,0,0,c.width,c.height);
+    URL.revokeObjectURL(url);const u=c.toDataURL("image/jpeg",.9);
+    res({block:{type:"image",source:{type:"base64",media_type:"image/jpeg",data:u.split(",")[1]}},thumb:u});
+  };
+  im.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("無法讀取圖片"))};
+  im.src=url;
+})}
+async function addImages(files){
+  for(const f of [...files].filter(f=>f.type.startsWith("image/"))){
+    if(ocrImgs.length>=5){alert("最多 5 張圖片");break}
+    try{ocrImgs.push(await imgToBlock(f))}catch(e){alert(e.message)}
+  }
+  renderThumbs();
+}
+function renderThumbs(){$("ocrThumbs").innerHTML=ocrImgs.map((x,i)=>`<span class="thumb"><img src="${x.thumb}"><button class="sm ghost" data-rmimg="${i}">✕</button></span>`).join("")}
+function markBad(){
+  let bad=0;
+  document.querySelectorAll("#menuRows .irow").forEach(r=>{
+    const n=r.querySelector(".in-n").value.trim(),m=+r.querySelector(".in-m").value,l=+r.querySelector(".in-l").value||0;
+    const b=!!(n||m||l)&&(!n||!(m>0)||l<0||(l&&l<m));r.classList.toggle("bad",b);if(b)bad++;
+  });
+  return bad;
+}
+async function recognize(store,text,blocks,key){
+  const prompt=`以下是飲料店「${store}」的價目表(附上的圖片和/或下方文字)。請抽出飲料價目表。
+規則:
+- 只使用來源中明確出現的品項與價格,不可推測或沿用記憶中的價格。
+- 每個品項格式 [品名, 中杯價格, 大杯價格];只有一種容量或沒有大杯時大杯填 0。價格為整數(新台幣)。
+- 看不清楚、無法確定的品項請略過;若是分地區價格,取北部(台北)價,並排除百貨商場或特殊店型的專屬價;沒有可辨識的價格時,回傳 {"menu":null}。
+- 只輸出一個 JSON 物件,格式 {"menu":[[品名,中杯,大杯],...]},不要其他文字。
+`+(text?NL+"文字內容:"+NL+text.slice(0,60000):"");
+  const r=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{"x-api-key":key,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:OCR_MODEL,max_tokens:6000,messages:[{role:"user",content:[...blocks,{type:"text",text:prompt}]}]})
+  });
+  if(r.status===401)throw new Error("API key 無效,請重新設定");
+  if(!r.ok)throw new Error("辨識失敗(HTTP "+r.status+"):"+(await r.text()).slice(0,150));
+  const out=((await r.json()).content||[]).map(b=>b.text||"").join("");
+  const m=out.match(/[{][^]*[}]/);if(!m)throw new Error("模型回覆格式不正確");
+  const menu=JSON.parse(m[0]).menu;
+  if(!Array.isArray(menu)||!menu.length)throw new Error("沒有辨識到任何價目");
+  return menu.filter(x=>Array.isArray(x)&&x[0]).map(x=>[String(x[0]).trim(),Math.round(+x[1])||0,Math.round(+x[2])||0]);
+}
+document.addEventListener("paste",e=>{
+  if($("adminView").hidden)return;
+  const files=[...(e.clipboardData?.files||[])].filter(f=>f.type.startsWith("image/"));
+  if(files.length){e.preventDefault();addImages(files);return}
+  if(e.target.closest&&e.target.closest("input,textarea,select"))return;
+  const t=e.clipboardData?.getData("text/plain");
+  if(t){e.preventDefault();$("ocrText").value+=($("ocrText").value?NL:"")+t}
+});
+$("ocrDrop").ondragover=e=>e.preventDefault();
+$("ocrDrop").ondrop=e=>{e.preventDefault();addImages(e.dataTransfer.files)};
+$("ocrPick").onclick=()=>$("ocrFile").click();
+$("ocrFile").onchange=e=>{addImages(e.target.files);e.target.value=""};
+$("ocrThumbs").onclick=e=>{const b=e.target.closest("[data-rmimg]");if(b){ocrImgs.splice(+b.dataset.rmimg,1);renderThumbs()}};
+$("ocrClear").onclick=()=>{ocrImgs=[];$("ocrText").value="";renderThumbs();$("ocrStatus").textContent=""};
+$("ocrKey").onclick=setKey;
+$("menuRows").oninput=markBad;
+$("ocrRun").onclick=async()=>{
+  const text=$("ocrText").value.trim();
+  if(!ocrImgs.length&&!text)return alert("請先貼上圖片或文字");
+  let key=getKey();if(!key)key=await setKey();if(!key)return;
+  const hasRows=[...document.querySelectorAll("#menuRows .in-n")].some(i=>i.value.trim());
+  if(hasRows&&!confirm("辨識結果會取代目前輸入框裡的品項(按「儲存菜單」前不會寫入資料)。繼續?"))return;
+  const btn=$("ocrRun"),st=$("ocrStatus");btn.disabled=true;st.textContent="辨識中…";
+  try{
+    const menu=await recognize($("aStore").value,text,ocrImgs.map(x=>x.block),key);
+    $("menuRows").innerHTML=menu.map(rowHtml).join("");
+    const bad=markBad();
+    st.textContent=`共辨識 ${menu.length} 項${bad?`,其中 ${bad} 項需檢查(紅框)`:""}。請確認後按上方「儲存菜單」。`;
+  }catch(e){console.error(e);st.textContent="辨識失敗:"+(e.message||e)}
+  finally{btn.disabled=false}
+};
+renderKeyState();
 
 $("priceUpdate").onclick=async()=>{
   let d;
@@ -426,7 +541,7 @@ $("priceUpdate").onclick=async()=>{
   const st=d.stores||{},all=allStores();
   const todo=all.filter(n=>st[n]&&st[n].status!=="pending"&&st[n].menu&&JSON.stringify(st[n].menu)!==JSON.stringify(menuOf(n)));
   if(todo.length&&!confirm("以下店家的菜單將被覆蓋(含你自行編輯的內容):\n"+todo.join("\n")+"\n\n繼續?"))return;
-  try{for(const n of todo)await B.saveMenu(n,st[n].menu)}
+  try{for(const n of todo)await B.saveMenu(n,st[n].menu,st[n].updated||d.date||"")}
   catch(e){console.error(e);return alert("寫入菜單失敗,部分店家可能尚未更新:"+(e.message||e))}
   await loadMeta();
   const c=k=>all.filter(n=>meta[n]?.status===k).length;
@@ -442,7 +557,7 @@ $("addStore").onclick=()=>{
 
 function buildText(){
   const o=cur();if(!o.items.length)return null;
-  const L=[`【飲料訂單】${o.date} ${o.store}`,""];
+  const L=[`【飲料訂單】${o.date} ${o.store}`,""];if(ddOf(o))L.splice(1,0,`價格資料日期:${ddOf(o)}`);
   const by={};o.items.forEach(i=>(by[i.who]=by[i.who]||[]).push(i));
   Object.entries(by).forEach(([w,a])=>{L.push(w+":");a.forEach(i=>L.push(`  ${i.name} x${i.qty} ${specPlain(i)} $${price(i)}`))});
   const sum={};o.items.forEach(i=>{const k=`${i.name} ${specPlain({...i,note:""})}`;sum[k]=(sum[k]||0)+i.qty});
@@ -467,7 +582,7 @@ $("mkImg").onclick=()=>{
   g.fillStyle="#fff";g.fillRect(0,0,W,H);
   g.fillStyle="#c8553d";g.fillRect(0,0,W,70);
   g.fillStyle="#fff";g.font=`bold 24px ${F}`;g.fillText("飲料訂單",24,34);
-  g.font=`15px ${F}`;g.fillText(`${o.date}  ${o.store}`,24,58);
+  g.font=`15px ${F}`;g.fillText(`${o.date}  ${o.store}${ddOf(o)?"  價格資料 "+ddOf(o):""}`,24,58);
   let y=100;g.fillStyle="#888";g.font=`13px ${F}`;
   [["訂購人",24],["品項",120],["規格 / 備註",270],["數量",580],["小計",650]].forEach(([t,x])=>g.fillText(t,x,y));
   g.strokeStyle="#ddd";g.beginPath();g.moveTo(24,y+8);g.lineTo(W-24,y+8);g.stroke();y+=rowH-4;
