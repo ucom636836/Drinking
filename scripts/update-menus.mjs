@@ -94,6 +94,11 @@ function diff(oldMenu, menu) {
   return lines;
 }
 
+if (!process.env.ANTHROPIC_API_KEY) {
+  console.error("缺少 ANTHROPIC_API_KEY:請到 GitHub Settings → Secrets and variables → Actions 新增 Repository secret(名稱全大寫)。");
+  process.exit(1);
+}
+
 const result = { date: today, note: NOTE, stores: {} };
 const report = [], failed = [];
 let changed = 0;
@@ -145,3 +150,10 @@ if (!DRY) { writeFileSync("menu-updates.json", json); writeFileSync("pr-body.md"
 else console.log(pr);
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `changed=${changed > 0}\n`);
 console.log(`完成:變動 ${changed} 家,失敗 ${failed.length} 家`);
+// 有來源的店家全部失敗(例如 API key 無效)時讓流程失敗,GitHub 才會寄失敗通知
+const tried = Object.values(sources).filter(s => s.urls?.length || s.files?.length).length;
+const triedFailed = failed.filter(f => !f.endsWith("無官方來源網址")).length;
+if (tried && triedFailed === tried) {
+  console.error(`有來源的 ${tried} 家店全部失敗,視為整體失敗。`);
+  process.exit(1);
+}
