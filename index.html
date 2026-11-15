@@ -285,8 +285,9 @@ async function loadMeta(){
 }
 function renderStoreSel(){
   const v=$("store").value;
-  const list=allStores().filter(s=>isAdmin||!db.hidden.includes(s));
-  $("store").innerHTML=list.map(s=>`<option value="${esc(s)}">${esc(s)}${esc(stampOf(s))}${db.hidden.includes(s)?"(已隱藏)":""}</option>`).join("");
+  const list=allStores().filter(s=>!db.hidden.includes(s));
+  const short=s=>s.replace(/\s*\(大安區\)\s*$/,"");
+  $("store").innerHTML=list.map(s=>`<option value="${esc(s)}">${esc(short(s))}${esc(stampOf(s))}</option>`).join("");
   if(v&&list.includes(v))$("store").value=v;
 }
 /* ===== 店家管理分頁(僅管理員) ===== */
