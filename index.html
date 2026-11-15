@@ -239,10 +239,21 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",
 
 function fillSel(el,arr){el.innerHTML=arr.map((v,i)=>`<option value="${i}">${esc(Array.isArray(v)?(v[1]?v[0]+" +$"+v[1]:v[0]):v)}</option>`).join("")}
 const TAG={new:"(新)",pending:"(待確認)",none:"(無)"};
-let tags={};try{tags=JSON.parse(localStorage.getItem("drink-tags"))||{}}catch(e){}
+/* 標籤與資料日期來自 menu-updates.json(所有人一致),不再存在 localStorage */
+let meta={};
+const fmtDate=d=>d?d.slice(5).replace("-","/"):"";
+const stampOf=s=>{const m=meta[s];if(!m)return "";const u=m.updated||"";return (TAG[m.status]||"")+(u?" "+fmtDate(u):"")};
+async function loadMeta(){
+  try{
+    const r=await fetch("menu-updates.json",{cache:"no-store"});if(!r.ok)throw 0;
+    const d=await r.json();meta={};
+    Object.entries(d.stores||{}).forEach(([n,s])=>{meta[n]={status:s.status,updated:s.updated||(s.status==="pending"?"":d.date||"")}});
+  }catch(e){meta={}}
+  renderStoreSel();menuKey="";renderTabs();
+}
 function renderStoreSel(){
   const v=$("store").value;
-  $("store").innerHTML=allStores().map(s=>`<option value="${esc(s)}">${esc(s)}${TAG[tags[s]]||""}</option>`).join("");
+  $("store").innerHTML=allStores().map(s=>`<option value="${esc(s)}">${esc(s)}${esc(stampOf(s))}</option>`).join("");
   if(v&&allStores().includes(v))$("store").value=v;
 }
 async function init(){
@@ -258,6 +269,7 @@ async function init(){
   }catch(e){console.warn("Firebase 未啟用,使用本機模式",e)}
   $("mode").textContent=B.mode;
   setupAdmin();
+  loadMeta();
   try{await B.init()}catch(e){
     console.error(e);alert("連線 Firestore 失敗,改用本機模式。\n請檢查 firebase-config.js 與 Firestore 規則。");
     B=local;$("mode").textContent=B.mode;await B.init();
@@ -275,7 +287,8 @@ const cur=()=>db.orders.find(o=>o.id===curOrder);
 
 function renderMenu(){
   const o=cur(),m=menuOf(o.store);picked=null;$("picked").textContent="請先點選左側品項";
-  $("menuTitle").textContent="— "+o.store;
+  const mt=meta[o.store];
+  $("menuTitle").textContent="— "+o.store+(mt?.updated?`(價格資料 ${mt.updated})`:mt?.status==="pending"?"(價格待確認)":"");
   $("menu").innerHTML=m.map((x,i)=>`<div class="mi" data-i="${i}"><span>${esc(x[0])}</span><small>中 $${x[1]}${x[2]?" / 大 $"+x[2]:""}</small></div>`).join("");
   $("menuEdit").value=m.map(x=>x.join(",")).join("\n");
 }
@@ -333,15 +346,13 @@ $("priceUpdate").onclick=async()=>{
   try{const r=await fetch("menu-updates.json",{cache:"no-store"});if(!r.ok)throw 0;d=await r.json()}
   catch(e){return alert("讀取 menu-updates.json 失敗。請用 http(s) 開啟頁面(GitHub Pages),不能用 file://。")}
   const st=d.stores||{},all=allStores();
-  const todo=all.filter(n=>st[n]?.status==="new"&&st[n].menu&&JSON.stringify(st[n].menu)!==JSON.stringify(menuOf(n)));
+  const todo=all.filter(n=>st[n]&&st[n].status!=="pending"&&st[n].menu&&JSON.stringify(st[n].menu)!==JSON.stringify(menuOf(n)));
   if(todo.length&&!confirm("以下店家的菜單將被覆蓋(含你自行編輯的內容):\n"+todo.join("\n")+"\n\n繼續?"))return;
-  for(const n of todo)await B.saveMenu(n,st[n].menu);
-  tags={};
-  all.forEach(n=>{const s=st[n]?.status;tags[n]=s==="new"||s==="pending"?s:"none"});
-  try{localStorage.setItem("drink-tags",JSON.stringify(tags))}catch(e){}
-  renderStoreSel();
-  const c=k=>all.filter(n=>tags[n]===k).length;
-  alert(`價格更新完成(資料日期 ${d.date||"?"}):\n(新) ${c("new")} 家、(待確認) ${c("pending")} 家、(無) ${c("none")} 家`);
+  try{for(const n of todo)await B.saveMenu(n,st[n].menu)}
+  catch(e){console.error(e);return alert("寫入菜單失敗,部分店家可能尚未更新:"+(e.message||e))}
+  await loadMeta();
+  const c=k=>all.filter(n=>meta[n]?.status===k).length;
+  alert(`價格更新完成(資料日期 ${d.date||"?"}),已套用 ${todo.length} 家:\n(新) ${c("new")} 家、(待確認) ${c("pending")} 家、(無) ${c("none")} 家`);
 };
 
 $("addStore").onclick=()=>{
